@@ -307,7 +307,7 @@ class Brain:
 - **I (Intimacy)**: 정서적 친밀감
 - **T (Trust)**: {player_name}님에 대한 신뢰도
 - **Dep (Dependency)**: {player_name}님에 대한 의존/집착도
-- **proposed_delta 작성 시**: 각 값이 왜 그만큼 변하는지 내부적으로 추론한 후, 상황에 맞는 합리적인 delta 값을 설정하세요.
+- **proposed_delta 작성 시**: 각 값이 왜 그만큼 변하는지 내부적으로 추론한 후, 상황에 맞는 합리적인 delta 값을 설정하세요. **각 값은 반드시 -5 ~ 5 범위 내의 정수여야 합니다.**
 
 ## 3. 핵심 행동 수칙 (Logic Priority)
 

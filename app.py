@@ -425,12 +425,13 @@ class GameApp:
         # 이미지 생성 (visual_change_detected가 true이거나 5턴 이상 지났을 때)
         image = None
         visual_change_detected = response.get("visual_change_detected", False)
+        new_image_generated = False  # 새 이미지가 생성되었는지 추적
         
         if visual_change_detected and config.IMAGE_MODE_ENABLED:
-            # LLM 모델 offload를 위한 1초 대기
+            # LLM 모델 offload를 위한 2초 대기
             import time
-            logger.info("Waiting 1 second for LLM model offload...")
-            time.sleep(1.0)
+            logger.info("Waiting 2 second for LLM model offload...")
+            time.sleep(2.0)
             logger.info("Starting image generation...")
             
             try:
@@ -476,6 +477,7 @@ class GameApp:
                     image = Image.open(io.BytesIO(image_bytes))
                     # 현재 이미지로 저장
                     self.current_image = image
+                    new_image_generated = True  # 새 이미지 생성됨
                     logger.info("Image generated successfully")
                 else:
                     logger.warning("Failed to generate image (returned None)")
@@ -485,13 +487,9 @@ class GameApp:
                 logger.error(traceback.format_exc())
                 # 이미지 생성 실패해도 대화는 계속 진행
         
-        # 새 이미지가 생성되지 않았으면 이전 이미지 유지 (gr.update로 자동고침 방지)
-        if image is None:
-            if self.current_image is not None:
-                # 이전 이미지 유지 (자동고침 방지)
-                image = gr.update()
-            else:
-                image = None
+        # 새 이미지가 생성되지 않았으면 이전 이미지 그대로 반환 (로딩 창 방지)
+        if not new_image_generated:
+            image = self.current_image
         
         choices_text = "다음 대사를 입력하세요."
         thought_text = f"💭 **속마음**: {thought}" if thought else ""
@@ -695,21 +693,42 @@ class GameApp:
                             stats_display = gr.Markdown(label="상태")
                             image_display = gr.Image(label="캐릭터", height=400)
                     
+                    # 이미지 업데이트 트리거용 hidden state
+                    image_update_trigger = gr.State(value=None)
+                    
                     def on_submit(message, history):
                         if not self.model_loaded:
-                            return history, "**오류**: 먼저 초기 설정에서 '저장 및 바로 시작'을 눌러주세요.", "", gr.update(), "", "", ""
+                            return history, "", "", "", "", None  # 마지막은 trigger
                         new_history, output, stats, image, choices, thought, action = self.process_turn(message, history)
-                        return new_history, "", stats, image, choices, thought, action
+                        
+                        # image가 새로 생성됐으면 trigger에 넣고, 아니면 None
+                        return new_history, "", stats, thought, action, image
                     
+                    def update_image_if_needed(trigger_image):
+                        """트리거에 이미지가 있을 때만 반환, 없으면 업데이트 안 함"""
+                        if trigger_image is not None:
+                            return trigger_image
+                        return gr.skip()  # Gradio 6.x: 업데이트 건너뛰기
+                    
+                    # 메인 submit - 이미지 제외
                     submit_btn.click(
                         on_submit,
                         inputs=[user_input, chatbot],
-                        outputs=[chatbot, user_input, stats_display, image_display, gr.Textbox(visible=False), thought_display, action_display]
+                        outputs=[chatbot, user_input, stats_display, thought_display, action_display, image_update_trigger]
+                    ).then(
+                        update_image_if_needed,
+                        inputs=[image_update_trigger],
+                        outputs=[image_display]
                     )
+                    
                     user_input.submit(
                         on_submit,
                         inputs=[user_input, chatbot],
-                        outputs=[chatbot, user_input, stats_display, image_display, gr.Textbox(visible=False), thought_display, action_display]
+                        outputs=[chatbot, user_input, stats_display, thought_display, action_display, image_update_trigger]
+                    ).then(
+                        update_image_if_needed,
+                        inputs=[image_update_trigger],
+                        outputs=[image_display]
                     )
                     
                     # 모델 로드 완료 시 UI 활성화

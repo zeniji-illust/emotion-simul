@@ -11,6 +11,7 @@ import urllib.parse
 import logging
 import time
 import threading
+import random
 from pathlib import Path
 from typing import Optional, Dict, Any
 from PIL import Image
@@ -169,9 +170,13 @@ class ComfyClient:
         if "7" in workflow and negative_prompt:
             workflow["7"]["inputs"]["text"] = negative_prompt
         
-        # 노드 "3": KSampler - 시드 설정
-        if "3" in workflow and seed >= 0:
-            workflow["3"]["inputs"]["seed"] = seed
+        # 노드 "3": KSampler - 시드 설정 (항상 랜덤)
+        if "3" in workflow:
+            # 항상 1부터 1046271897565195까지 랜덤 정수 생성
+            max_seed = 1046271897565195
+            random_seed = random.randint(1, max_seed)
+            workflow["3"]["inputs"]["seed"] = random_seed
+            logger.info(f"Random seed generated: {random_seed}")
         
         # 웹소켓 연결
         self._connect_websocket()
