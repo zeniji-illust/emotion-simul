@@ -2,11 +2,14 @@
 🚀 ZEMS (Zeniji Emotion Simul) Beta 버전 공개 및 설치 안내
 
 안녕하세요, Zeniji Emotion Simul (ZEMS)의 베타 버전을 드디어 공개합니다. 
+
 아직 부족한 부분이 많지만, 관심 있는 사용자분들과 함께 개발하고 피드백을 받고자 미리 공개를 결정했습니다.
 
 ZEMS의 핵심 기능인 감정 시뮬레이션 및 이미지 생성을 경험해 보시고, 많은 피드백 부탁드립니다.
 
+
 📥 1단계: ZEMS 프로젝트 다운로드 (Git Clone)
+
 ZEMS 프로젝트를 저장할 폴더를 선택하신 후, 해당 폴더의 주소창에 cmd를 입력하여 명령 프롬프트(CMD)를 실행하고 다음 명령어를 입력합니다.
 
 Bash 
@@ -14,7 +17,9 @@ git clone https://github.com/zeniji-illust/emotion-simul
 
 ⚠️ 주의: 해당 명령어를 사용하시려면 반드시 Git이 시스템에 미리 설치되어 있어야 합니다.
 
+
 🐍 2단계: Python 환경 설정 및 라이브러리 설치
+
 ZEMS는 Python 3.11.0 버전에 최적화되어 있습니다.
 
 Python 초심자용: 프로젝트 폴더 내의 install.bat 파일을 실행하여 의존성 설치를 시도하십시오. 오류 메시지가 발생할 경우, 먼저 Python 3.11.0을 설치하고 다시 시도해 주십시오.
@@ -33,6 +38,7 @@ Bash
 ollama run kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest
 
 🖼️ 4단계: ComfyUI 설정 및 실행
+
 이미지 생성을 담당하는 ComfyUI를 준비합니다.
 
 ComfyUI 실행: ComfyUI를 먼저 실행합니다.
@@ -40,6 +46,7 @@ ComfyUI 실행: ComfyUI를 먼저 실행합니다.
 포트 설정 확인: ZEMS는 ComfyUI API 통신을 위해 포트(Port) 8000을 사용하도록 기본 설정되어 있습니다. ComfyUI의 포트 설정이 8000이 아닐 경우, ZEMS가 이미지 생성을 요청할 수 없습니다.
 
 💻 5단계: ZEMS 실행
+
 모든 준비가 완료되었다면, 프로젝트 폴더 내의 start.bat 파일을 실행하여 ZEMS를 시작할 수 있습니다.
 
 ⚠️ 중요: 이미지 생성 관련 세부 설정 (베타 버전 제한 사항)
