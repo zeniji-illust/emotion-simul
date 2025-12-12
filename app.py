@@ -23,6 +23,8 @@ logger = logging.getLogger("App")
 
 # 설정 파일 경로
 CONFIG_FILE = Path("character_config.json")
+API_KEY_DIR = Path("apikey")
+OPENROUTER_API_KEY_FILE = API_KEY_DIR / "openrouter_api_key.txt"
 
 # 프리셋 정의
 PRESETS = {
@@ -94,6 +96,34 @@ class GameApp:
         
         return result
     
+    def _load_openrouter_api_key(self) -> str:
+        """OpenRouter API 키를 파일에서 불러오기"""
+        try:
+            if OPENROUTER_API_KEY_FILE.exists():
+                with open(OPENROUTER_API_KEY_FILE, 'r', encoding='utf-8') as f:
+                    api_key = f.read().strip()
+                    return api_key if api_key else ""
+            return ""
+        except Exception as e:
+            logger.warning(f"Failed to load OpenRouter API key: {e}")
+            return ""
+    
+    def _save_openrouter_api_key(self, api_key: str) -> bool:
+        """OpenRouter API 키를 파일에 저장"""
+        try:
+            # apikey 디렉토리가 없으면 생성
+            API_KEY_DIR.mkdir(exist_ok=True)
+            
+            # API 키 저장
+            with open(OPENROUTER_API_KEY_FILE, 'w', encoding='utf-8') as f:
+                f.write(api_key.strip())
+            
+            logger.info(f"OpenRouter API key saved to {OPENROUTER_API_KEY_FILE}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save OpenRouter API key: {e}")
+            return False
+    
     def _default_config(self) -> Dict:
         """기본 설정 반환"""
         return {
@@ -121,7 +151,6 @@ class GameApp:
             "llm_settings": {
                 "provider": "ollama",
                 "ollama_model": "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest",
-                "openrouter_api_key": "",
                 "openrouter_model": "qwen/qwen-2.5-14b-instruct"
             }
         }
@@ -225,8 +254,9 @@ class GameApp:
             llm_settings = config_data.get("llm_settings", {})
             provider = llm_settings.get("provider", "ollama")
             ollama_model = llm_settings.get("ollama_model", "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest")
-            openrouter_api_key = llm_settings.get("openrouter_api_key", "")
             openrouter_model = llm_settings.get("openrouter_model", "qwen/qwen-2.5-14b-instruct")
+            # API 키는 파일에서 불러오기
+            openrouter_api_key = self._load_openrouter_api_key() if provider == "openrouter" else ""
             
             if self.brain is None:
                 model_name = ollama_model if provider == "ollama" else openrouter_model
@@ -324,8 +354,9 @@ class GameApp:
             llm_settings = config_data.get("llm_settings", {})
             provider = llm_settings.get("provider", "ollama")
             ollama_model = llm_settings.get("ollama_model", "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest")
-            openrouter_api_key = llm_settings.get("openrouter_api_key", "")
             openrouter_model = llm_settings.get("openrouter_model", "qwen/qwen-2.5-14b-instruct")
+            # API 키는 파일에서 불러오기
+            openrouter_api_key = self._load_openrouter_api_key()
             
             # Brain 초기화 (설정에 따라 MemoryManager도 초기화)
             if self.brain is None:
@@ -822,8 +853,9 @@ class GameApp:
                     llm_settings = saved_config.get("llm_settings", {})
                     provider = llm_settings.get("provider", "ollama")
                     ollama_model = llm_settings.get("ollama_model", "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest")
-                    openrouter_api_key = llm_settings.get("openrouter_api_key", "")
                     openrouter_model = llm_settings.get("openrouter_model", "qwen/qwen-2.5-14b-instruct")
+                    # API 키는 파일에서 불러오기
+                    openrouter_api_key = self._load_openrouter_api_key()
                     
                     llm_provider = gr.Radio(
                         label="LLM Provider",
@@ -876,11 +908,15 @@ class GameApp:
                         try:
                             config_data = self.load_config()
                             
-                            # LLM 설정 업데이트
+                            # OpenRouter API 키는 별도 파일에 저장
+                            if provider_val == "openrouter" and openrouter_key_val:
+                                if not self._save_openrouter_api_key(openrouter_key_val):
+                                    return "❌ OpenRouter API 키 저장 실패"
+                            
+                            # LLM 설정 업데이트 (API 키는 제외)
                             config_data["llm_settings"] = {
                                 "provider": provider_val,
                                 "ollama_model": ollama_model_val or "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest",
-                                "openrouter_api_key": openrouter_key_val or "",
                                 "openrouter_model": openrouter_model_val or "qwen/qwen-2.5-14b-instruct"
                             }
                             
@@ -891,11 +927,13 @@ class GameApp:
                                     if self.brain is not None:
                                         # 기존 Brain의 memory_manager를 새 설정으로 재초기화
                                         llm_settings = config_data["llm_settings"]
+                                        # API 키는 파일에서 불러오기
+                                        api_key = self._load_openrouter_api_key() if llm_settings["provider"] == "openrouter" else None
                                         self.brain.memory_manager = MemoryManager(
                                             dev_mode=self.dev_mode,
                                             provider=llm_settings["provider"],
                                             model_name=llm_settings["ollama_model"] if llm_settings["provider"] == "ollama" else llm_settings["openrouter_model"],
-                                            api_key=llm_settings["openrouter_api_key"] if llm_settings["provider"] == "openrouter" else None
+                                            api_key=api_key
                                         )
                                         
                                         # 모델 로드 시도 (OpenRouter 실패 시 Ollama로 폴백)

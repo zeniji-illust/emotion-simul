@@ -24,6 +24,7 @@ class Brain:
     """The Director: 게임 흐름 통제"""
     
     def __init__(self, dev_mode: bool = False, provider: str = None, model_name: str = None, api_key: str = None):
+        self.dev_mode = dev_mode
         self.memory_manager = MemoryManager(
             dev_mode=dev_mode,
             provider=provider,
@@ -54,25 +55,27 @@ class Brain:
         # 2. LLM 호출 (첫 턴도 포함)
         llm_response = self._call_llm(player_input)
         
-        # Ollama 원본 응답 로그 출력
-        logger.info("=" * 80)
-        logger.info("📥 [OLLAMA RAW RESPONSE]")
-        logger.info("=" * 80)
-        logger.info(llm_response)
-        logger.info("=" * 80)
+        # Ollama 원본 응답 로그 출력 (dev_mode일 때만)
+        if self.dev_mode:
+            logger.info("=" * 80)
+            logger.info("📥 [OLLAMA RAW RESPONSE]")
+            logger.info("=" * 80)
+            logger.info(llm_response)
+            logger.info("=" * 80)
         
         # 3. JSON 파싱 및 검증
         try:
             data = self._parse_json(llm_response)
             self._validate_response(data)
             
-            # 파싱 및 검증된 JSON 로그 출력
-            logger.info("=" * 80)
-            logger.info("✅ [PARSED JSON]")
-            logger.info("=" * 80)
-            import json as json_module
-            logger.info(json_module.dumps(data, ensure_ascii=False, indent=2))
-            logger.info("=" * 80)
+            # 파싱 및 검증된 JSON 로그 출력 (dev_mode일 때만)
+            if self.dev_mode:
+                logger.info("=" * 80)
+                logger.info("✅ [PARSED JSON]")
+                logger.info("=" * 80)
+                import json as json_module
+                logger.info(json_module.dumps(data, ensure_ascii=False, indent=2))
+                logger.info("=" * 80)
         except Exception as e:
             logger.error(f"JSON parsing failed: {e}")
             import traceback
@@ -181,14 +184,15 @@ class Brain:
         # 프롬프트 조립
         prompt = self._build_prompt(player_input)
         
-        # 시스템 프롬프트 로그 출력
-        logger.info("=" * 80)
-        logger.info("📝 [SYSTEM PROMPT]")
-        logger.info("=" * 80)
-        logger.info(prompt)
-        logger.info("=" * 80)
+        # 시스템 프롬프트 로그 출력 (dev_mode일 때만)
+        if self.dev_mode:
+            logger.info("=" * 80)
+            logger.info("📝 [SYSTEM PROMPT]")
+            logger.info("=" * 80)
+            logger.info(prompt)
+            logger.info("=" * 80)
         
-        logger.info("Calling Ollama API...")
+        logger.info("Calling LLM API...")
         try:
             # Ollama API 호출
             response_text = self.memory_manager.generate(

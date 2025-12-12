@@ -1,23 +1,23 @@
 {
   "player": {
-    "name": "문돼남",
+    "name": "조용현",
     "gender": "남성"
   },
   "character": {
-    "name": "예나",
-    "age": 18,
+    "name": "설연",
+    "age": 24,
     "gender": "여성",
-    "appearance": "she is korean beauty, gorgeous but cute and pure face, tied hair with cute long pigtails",
-    "personality": "밝고 활발하지만 좋아하는 사람 앞에서는 수줍음이 많음"
+    "appearance": "she is korean beauty, gorgeous actress unique face, long sleek hair",
+    "personality": "도도하고 우아하고 아주 솔직한 그녀"
   },
   "initial_stats": {
-    "P": 70.0,
+    "P": 20.0,
     "A": 70.0,
-    "D": 0.0,
-    "I": 70.0,
-    "T": 70.0,
-    "Dep": 70.0
+    "D": 60.0,
+    "I": 20.0,
+    "T": 20.0,
+    "Dep": 0.0
   },
-  "initial_context": "예나는 내 노예가 되어가고 있다. 예나는 나를 문돼남이 아니라 주인님이라고 부른다. 예나는 나에게 매달리고 관계의 주도권은 내가 가지고 있다. 예나는 나를 바라보며 무릎 꿇고 있다. ",
-  "initial_background": "cozy room, bed"
+  "initial_context": "무인도에 조난당했다. 아주 유명한 탤런트 설희랑 나만 살아남았다. 이제 어떻게 하지?",
+  "initial_background": "airplane crash, tropical island, fire"
 }

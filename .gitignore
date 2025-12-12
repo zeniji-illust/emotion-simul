@@ -28,6 +28,7 @@ models/
 *.log
 .env
 .env.local
+apikey/
 
 # OS
 .DS_Store
