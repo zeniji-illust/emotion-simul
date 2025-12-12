@@ -520,6 +520,7 @@ class GameApp:
         # 이미지 생성 (visual_change_detected가 true이거나 5턴 이상 지났을 때)
         image = None
         visual_change_detected = response.get("visual_change_detected", False)
+        image_generation_reasons = response.get("image_generation_reasons", [])
         new_image_generated = False  # 새 이미지가 생성되었는지 추적
         
         if visual_change_detected and config.IMAGE_MODE_ENABLED:
@@ -527,7 +528,18 @@ class GameApp:
             import time
             logger.info("Waiting 2 second for LLM model offload...")
             time.sleep(2.0)
-            logger.info("Starting image generation...")
+            
+            # 이미지 생성 이유 로그 출력
+            if image_generation_reasons:
+                logger.info("=" * 80)
+                logger.info("🎨 [ComfyUI 이미지 생성 시작]")
+                logger.info("=" * 80)
+                logger.info("이미지 생성 이유:")
+                for i, reason in enumerate(image_generation_reasons, 1):
+                    logger.info(f"  {i}. {reason}")
+                logger.info("=" * 80)
+            else:
+                logger.info("🎨 [ComfyUI 이미지 생성 시작] (이유: visual_change_detected=true)")
             
             try:
                 # ComfyClient 초기화 (아직 안 되어 있으면)
@@ -557,7 +569,6 @@ class GameApp:
                     # visual_prompt에 background가 없으면 추가
                     visual_prompt = f"{visual_prompt}, background: {background}"
                 
-                logger.info(f"Generating image - visual_change_detected: {visual_change_detected}")
                 logger.info(f"  appearance: {appearance[:50]}...")
                 logger.info(f"  visual_prompt: {visual_prompt[:100]}...")
                 

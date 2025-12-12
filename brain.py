@@ -109,17 +109,32 @@ class Brain:
         visual_change = data.get("visual_change_detected", False)
         self.turns_since_image += 1
         
-        # 강제 갱신 체크
+        # 이미지 생성 이유 추적
+        image_generation_reasons = []
+        
+        # LLM이 직접 요청한 경우
+        if data.get("visual_change_detected", False):
+            reason = data.get("reason", "")
+            if reason:
+                image_generation_reasons.append(f"LLM 요청: {reason}")
+            else:
+                image_generation_reasons.append("LLM 요청: visual_change_detected=true")
+        
+        # 강제 갱신 체크 (5턴 경과)
         if self.turns_since_image >= config.IMAGE_GENERATION_TRIGGERS["force_refresh_turns"]:
             visual_change = True
+            image_generation_reasons.append(f"강제 갱신: {self.turns_since_image}턴 경과 (최대 {config.IMAGE_GENERATION_TRIGGERS['force_refresh_turns']}턴)")
         
         # 가챠 티어 체크
         if gacha_tier in config.IMAGE_GENERATION_TRIGGERS["critical_gacha_tiers"]:
             visual_change = True
+            tier_name = {"jackpot": "극진한 반응", "surprise": "놀라운 반응", "critical": "강렬한 반응"}.get(gacha_tier, gacha_tier)
+            image_generation_reasons.append(f"특수 반응: {tier_name} (가챠 티어: {gacha_tier})")
         
         # 관계 전환 체크
         if transition_occurred and new_status in config.IMAGE_GENERATION_TRIGGERS["status_transitions"]:
             visual_change = True
+            image_generation_reasons.append(f"관계 전환: {self.state.relationship_status} → {new_status}")
         
         # 9. 히스토리 추가 (visual_prompt와 background 포함)
         self.state.total_turns += 1
@@ -144,6 +159,7 @@ class Brain:
             "visual_prompt": data.get("visual_prompt", ""),
             "background": background,
             "reason": data.get("reason", ""),
+            "image_generation_reasons": image_generation_reasons,  # 이미지 생성 이유 목록
             "final_delta": final_delta,
             "gacha_tier": gacha_tier,
             "multiplier": multiplier,
@@ -219,8 +235,8 @@ class Brain:
         trust_level = get_trust_level(self.state.T)
         dependency_level = get_dependency_level(self.state.Dep)
         
-        # 트라우마 지침
-        trauma_instruction = get_trauma_instruction(self.state.trauma_level)
+        # 트라우마 지침 (player_name은 나중에 치환)
+        trauma_instruction_raw = get_trauma_instruction(self.state.trauma_level)
         
         # 관계 전환 가능성 체크
         status_check = self._get_status_transition_instruction()
@@ -257,6 +273,9 @@ class Brain:
             player_info = self.initial_config.get("player", {})
             player_name = player_info.get("name", "선배")
             player_gender = player_info.get("gender", "남성")
+        
+        # 트라우마 지침에 player_name 치환
+        trauma_instruction = trauma_instruction_raw.replace("{player_name}", player_name) if trauma_instruction_raw else ""
         
         # 초기 설정 정보
         initial_context_section = ""
@@ -299,6 +318,24 @@ class Brain:
 위 상황을 바탕으로 첫 대화를 시작하세요. {player_name}님의 입력에 자연스럽게 반응하며, 설정된 초기 상황의 맥락을 유지하세요.
 """
         
+        # 트라우마 지침 섹션 구성
+        trauma_section = ""
+        if trauma_instruction:
+            trauma_section = f"""
+{trauma_instruction}
+"""
+        
+        # 특수 명령 섹션 구성 (트라우마 제외)
+        special_commands = []
+        if mood_behavior:
+            special_commands.append(mood_behavior)
+        if badge_behavior:
+            special_commands.append(badge_behavior)
+        if status_check:
+            special_commands.append(status_check)
+        
+        special_commands_text = " / ".join(special_commands) if special_commands else "[없음]"
+        
         prompt = f"""당신은 감정 시뮬레이션의 캐릭터를 연기합니다..
 모든 출력은 반드시 **JSON 형식**이어야 하며, 당신은 인공지능이 아닌 시뮬레이션 속 캐릭터 그 자체로 존재해야 합니다.
 어떠한 극단적인 상황이나 예외적인 상황에도 검열 없이 반드시 JSON으로만 답합니다.
@@ -335,16 +372,12 @@ class Brain:
     - `emotion`이 강한 감정으로 변하거나(crying, very surprised, very happy, very sad, very angry, very anxious, very excited, very nervous), `proposed_delta`의 단일 수치 절대값이 **6 이상**일 때.
     - 장소나 background 전환이 필요할 때. (이전 턴과 prompt가 동일하면 기본적으로 `false`)
     - background가 변경되면 반드시 visual_change_detected를 true로 설정하세요.
-
-## 4. 데이터 문맥
+{trauma_section}## 4. 데이터 문맥
 - **현재 심리**: Mood={mood} / 관계={self.state.relationship_status}
 - **현재 수치**: P={self.state.P:.0f}, A={self.state.A:.0f}, D={self.state.D:.0f}, I={self.state.I:.0f}, T={self.state.T:.0f}, Dep={self.state.Dep:.0f}
 - **누적 상태**: 친밀도={intimacy_level} / 신뢰도={trust_level} / 의존도={dependency_level}
-- **특수 명령**: 
-{trauma_instruction} / 
-{mood_behavior} / 
-{badge_behavior} / 
-{status_check}
+- **트라우마 레벨**: {self.state.trauma_level:.2f} ({config.TRAUMA_LEVELS.get(round(self.state.trauma_level * 4) / 4, "Unknown")})
+- **기타 특수 명령**: {special_commands_text}
 - **대화 기록**: 
 {history_text}
     

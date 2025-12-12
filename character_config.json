@@ -19,5 +19,10 @@
     "Dep": 0.0
   },
   "initial_context": "무인도에 조난당했다. 아주 유명한 탤런트 설희랑 나만 살아남았다. 이제 어떻게 하지?",
-  "initial_background": "airplane crash, tropical island, fire"
+  "initial_background": "airplane crash, tropical island, fire",
+  "llm_settings": {
+    "provider": "ollama",
+    "ollama_model": "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest",
+    "openrouter_model": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
+  }
 }
