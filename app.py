@@ -151,7 +151,7 @@ class GameApp:
             "llm_settings": {
                 "provider": "ollama",
                 "ollama_model": "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest",
-                "openrouter_model": "qwen/qwen-2.5-14b-instruct"
+                "openrouter_model": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
             }
         }
     
@@ -249,7 +249,7 @@ class GameApp:
             config_data["llm_settings"]["provider"] = "openrouter"
             # OpenRouter 모델이 설정되어 있지 않으면 기본값 사용
             if "openrouter_model" not in config_data["llm_settings"]:
-                config_data["llm_settings"]["openrouter_model"] = "qwen/qwen-2.5-14b-instruct"
+                config_data["llm_settings"]["openrouter_model"] = "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
         else:
             # OpenRouter API 키가 없으면 Ollama 사용
             logger.info("OpenRouter API 키가 없습니다. Ollama를 사용합니다.")
@@ -275,7 +275,7 @@ class GameApp:
             llm_settings = config_data.get("llm_settings", {})
             provider = llm_settings.get("provider", "ollama")
             ollama_model = llm_settings.get("ollama_model", "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest")
-            openrouter_model = llm_settings.get("openrouter_model", "qwen/qwen-2.5-14b-instruct")
+            openrouter_model = llm_settings.get("openrouter_model", "cognitivecomputations/dolphin-mistral-24b-venice-edition:free")
             # API 키는 파일에서 불러오기 (이미 위에서 로드했지만 다시 확인)
             if provider == "openrouter":
                 openrouter_api_key = self._load_openrouter_api_key()
@@ -378,7 +378,7 @@ class GameApp:
             llm_settings = config_data.get("llm_settings", {})
             provider = llm_settings.get("provider", "ollama")
             ollama_model = llm_settings.get("ollama_model", "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest")
-            openrouter_model = llm_settings.get("openrouter_model", "qwen/qwen-2.5-14b-instruct")
+            openrouter_model = llm_settings.get("openrouter_model", "cognitivecomputations/dolphin-mistral-24b-venice-edition:free")
             # API 키는 파일에서 불러오기
             openrouter_api_key = self._load_openrouter_api_key()
             
@@ -888,7 +888,7 @@ class GameApp:
                     llm_settings = saved_config.get("llm_settings", {})
                     provider = llm_settings.get("provider", "ollama")
                     ollama_model = llm_settings.get("ollama_model", "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest")
-                    openrouter_model = llm_settings.get("openrouter_model", "qwen/qwen-2.5-14b-instruct")
+                    openrouter_model = llm_settings.get("openrouter_model", "cognitivecomputations/dolphin-mistral-24b-venice-edition:free")
                     # API 키는 파일에서 불러오기
                     openrouter_api_key = self._load_openrouter_api_key()
                     
@@ -918,7 +918,7 @@ class GameApp:
                         openrouter_model_input = gr.Textbox(
                             label="OpenRouter 모델",
                             value=openrouter_model,
-                            placeholder="예: qwen/qwen-2.5-14b-instruct",
+                            placeholder="예: cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
                             info="OpenRouter에서 사용할 모델 이름"
                         )
                     
@@ -952,7 +952,7 @@ class GameApp:
                             config_data["llm_settings"] = {
                                 "provider": provider_val,
                                 "ollama_model": ollama_model_val or "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest",
-                                "openrouter_model": openrouter_model_val or "qwen/qwen-2.5-14b-instruct"
+                                "openrouter_model": openrouter_model_val or "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
                             }
                             
                             # 설정 저장

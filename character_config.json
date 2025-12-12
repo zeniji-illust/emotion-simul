@@ -22,6 +22,6 @@
   "initial_background": "dark korean alley",
   "llm_settings": {
     "provider": "openrouter",
-    "openrouter_model": "qwen/qwen-2.5-14b-instruct"
+    "openrouter_model": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
   }
 }

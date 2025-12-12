@@ -75,7 +75,7 @@ OLLAMA_MODEL_NAME = "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest"
 
 # OpenRouter API 설정
 OPENROUTER_API_KEY = ""  # 환경설정에서 설정
-OPENROUTER_MODEL = "qwen/qwen-2.5-14b-instruct"  # 기본 모델
+OPENROUTER_MODEL = "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"  # 기본 모델
 
 # LLM 설정 (Ollama/OpenRouter 호환)
 LLM_CONFIG = {
