@@ -13,6 +13,7 @@ from typing import Tuple, Optional, Dict
 from brain import Brain
 from state_manager import CharacterState
 from comfy_client import ComfyClient
+from memory_manager import MemoryManager
 from PIL import Image
 import io
 import config
@@ -116,7 +117,13 @@ class GameApp:
                 "Dep": 0.0
             },
             "initial_context": "",
-            "initial_background": "college library table, evening light"
+            "initial_background": "college library table, evening light",
+            "llm_settings": {
+                "provider": "ollama",
+                "ollama_model": "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest",
+                "openrouter_api_key": "",
+                "openrouter_model": "qwen/qwen-2.5-14b-instruct"
+            }
         }
     
     def save_config(self, config_data: Dict) -> bool:
@@ -214,8 +221,22 @@ class GameApp:
         
         # Brain 초기화 및 설정 적용
         try:
+            # LLM 설정 읽기
+            llm_settings = config_data.get("llm_settings", {})
+            provider = llm_settings.get("provider", "ollama")
+            ollama_model = llm_settings.get("ollama_model", "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest")
+            openrouter_api_key = llm_settings.get("openrouter_api_key", "")
+            openrouter_model = llm_settings.get("openrouter_model", "qwen/qwen-2.5-14b-instruct")
+            
             if self.brain is None:
-                self.brain = Brain(dev_mode=self.dev_mode)
+                model_name = ollama_model if provider == "ollama" else openrouter_model
+                api_key = openrouter_api_key if provider == "openrouter" else None
+                self.brain = Brain(
+                    dev_mode=self.dev_mode,
+                    provider=provider,
+                    model_name=model_name,
+                    api_key=api_key
+                )
             
             # 초기 설정 정보 전달
             self.brain.set_initial_config(config_data)
@@ -293,22 +314,65 @@ class GameApp:
             return (f"✅ 설정 저장 완료, 하지만 첫 대화 생성 실패: {str(e)}", gr.Tabs(selected="chat_tab"), [], "", "", None, "", "", "")
     
     def load_model(self) -> Tuple[str, bool]:
-        """모델 로드"""
+        """모델 로드 (설정에서 LLM provider 정보 읽어서 초기화)"""
         if self.model_loaded and self.brain is not None:
             return "모델이 이미 로드되어 있습니다.", True
         
         try:
-            if self.brain is None:
-                self.brain = Brain(dev_mode=self.dev_mode)
-            logger.info("Brain initialized, loading model...")
+            # 설정에서 LLM 설정 읽기
+            config_data = self.load_config()
+            llm_settings = config_data.get("llm_settings", {})
+            provider = llm_settings.get("provider", "ollama")
+            ollama_model = llm_settings.get("ollama_model", "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest")
+            openrouter_api_key = llm_settings.get("openrouter_api_key", "")
+            openrouter_model = llm_settings.get("openrouter_model", "qwen/qwen-2.5-14b-instruct")
             
+            # Brain 초기화 (설정에 따라 MemoryManager도 초기화)
+            if self.brain is None:
+                model_name = ollama_model if provider == "ollama" else openrouter_model
+                api_key = openrouter_api_key if provider == "openrouter" else None
+                self.brain = Brain(
+                    dev_mode=self.dev_mode,
+                    provider=provider,
+                    model_name=model_name,
+                    api_key=api_key
+                )
+            else:
+                # Brain이 이미 있으면 memory_manager만 재초기화
+                model_name = ollama_model if provider == "ollama" else openrouter_model
+                api_key = openrouter_api_key if provider == "openrouter" else None
+                self.brain.memory_manager = MemoryManager(
+                    dev_mode=self.dev_mode,
+                    provider=provider,
+                    model_name=model_name,
+                    api_key=api_key
+                )
+            
+            logger.info(f"Brain initialized with {provider.upper()}, loading model...")
+            
+            # 모델 로드 시도 (OpenRouter 실패 시 Ollama로 폴백)
             result = self.brain.memory_manager.load_model()
+            if result is None and provider == "openrouter":
+                logger.warning("OpenRouter 연결 실패, Ollama로 폴백 시도...")
+                # Ollama로 폴백
+                self.brain.memory_manager = MemoryManager(
+                    dev_mode=self.dev_mode,
+                    provider="ollama",
+                    model_name=ollama_model
+                )
+                result = self.brain.memory_manager.load_model()
+                if result is None:
+                    return "⚠️ OpenRouter 연결 실패, Ollama로 폴백 시도했으나 Ollama도 연결 실패했습니다.", False
+                self.model_loaded = True
+                logger.info("Model loaded successfully (Ollama fallback)")
+                return "⚠️ OpenRouter 연결 실패, Ollama로 폴백하여 모델 로드 완료!", True
+            
             if result is None:
                 raise RuntimeError("모델 로드에 실패했습니다.")
             
             self.model_loaded = True
             logger.info("Model loaded successfully")
-            return "✅ 모델 로드 완료!", True
+            return f"✅ 모델 로드 완료! ({provider.upper()})", True
         except Exception as e:
             logger.error(f"Failed to load model: {e}")
             import traceback
@@ -752,8 +816,125 @@ class GameApp:
                 
                 # ========== 탭 3: 환경설정 ==========
                 with gr.Tab("⚙️ 환경설정", id="settings_tab"):
-                    gr.Markdown("## 환경설정")
-                    gr.Markdown("(준비 중...)")
+                    gr.Markdown("## LLM 설정")
+                    
+                    # LLM 설정 로드
+                    llm_settings = saved_config.get("llm_settings", {})
+                    provider = llm_settings.get("provider", "ollama")
+                    ollama_model = llm_settings.get("ollama_model", "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest")
+                    openrouter_api_key = llm_settings.get("openrouter_api_key", "")
+                    openrouter_model = llm_settings.get("openrouter_model", "qwen/qwen-2.5-14b-instruct")
+                    
+                    llm_provider = gr.Radio(
+                        label="LLM Provider",
+                        choices=["ollama", "openrouter"],
+                        value=provider,
+                        info="사용할 LLM 서비스 선택"
+                    )
+                    
+                    with gr.Group(visible=(provider == "ollama")) as ollama_group:
+                        ollama_model_input = gr.Textbox(
+                            label="Ollama 모델 이름",
+                            value=ollama_model,
+                            placeholder="예: kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest",
+                            info="'ollama list' 명령으로 확인한 정확한 모델 이름을 입력하세요"
+                        )
+                    
+                    with gr.Group(visible=(provider == "openrouter")) as openrouter_group:
+                        openrouter_api_key_input = gr.Textbox(
+                            label="OpenRouter API 키",
+                            value=openrouter_api_key,
+                            placeholder="sk-or-v1-...",
+                            type="password",
+                            info="OpenRouter API 키를 입력하세요 (https://openrouter.ai/keys)"
+                        )
+                        openrouter_model_input = gr.Textbox(
+                            label="OpenRouter 모델",
+                            value=openrouter_model,
+                            placeholder="예: qwen/qwen-2.5-14b-instruct",
+                            info="OpenRouter에서 사용할 모델 이름"
+                        )
+                    
+                    # Provider 변경 시 UI 표시/숨김
+                    def update_provider_ui(selected_provider):
+                        return (
+                            gr.Group(visible=(selected_provider == "ollama")),
+                            gr.Group(visible=(selected_provider == "openrouter"))
+                        )
+                    
+                    llm_provider.change(
+                        update_provider_ui,
+                        inputs=[llm_provider],
+                        outputs=[ollama_group, openrouter_group]
+                    )
+                    
+                    settings_status = gr.Markdown("")
+                    save_settings_btn = gr.Button("💾 설정 저장", variant="primary")
+                    
+                    def save_llm_settings(provider_val, ollama_model_val, openrouter_key_val, openrouter_model_val):
+                        """LLM 설정 저장"""
+                        try:
+                            config_data = self.load_config()
+                            
+                            # LLM 설정 업데이트
+                            config_data["llm_settings"] = {
+                                "provider": provider_val,
+                                "ollama_model": ollama_model_val or "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest",
+                                "openrouter_api_key": openrouter_key_val or "",
+                                "openrouter_model": openrouter_model_val or "qwen/qwen-2.5-14b-instruct"
+                            }
+                            
+                            # 설정 저장
+                            if self.save_config(config_data):
+                                # Brain 재초기화 (새 설정 적용)
+                                try:
+                                    if self.brain is not None:
+                                        # 기존 Brain의 memory_manager를 새 설정으로 재초기화
+                                        llm_settings = config_data["llm_settings"]
+                                        self.brain.memory_manager = MemoryManager(
+                                            dev_mode=self.dev_mode,
+                                            provider=llm_settings["provider"],
+                                            model_name=llm_settings["ollama_model"] if llm_settings["provider"] == "ollama" else llm_settings["openrouter_model"],
+                                            api_key=llm_settings["openrouter_api_key"] if llm_settings["provider"] == "openrouter" else None
+                                        )
+                                        
+                                        # 모델 로드 시도 (OpenRouter 실패 시 Ollama로 폴백)
+                                        result = self.brain.memory_manager.load_model()
+                                        if result is None and llm_settings["provider"] == "openrouter":
+                                            logger.warning("OpenRouter 연결 실패, Ollama로 폴백 시도...")
+                                            # Ollama로 폴백
+                                            config_data["llm_settings"]["provider"] = "ollama"
+                                            self.brain.memory_manager = MemoryManager(
+                                                dev_mode=self.dev_mode,
+                                                provider="ollama",
+                                                model_name=llm_settings["ollama_model"]
+                                            )
+                                            result = self.brain.memory_manager.load_model()
+                                            if result is None:
+                                                return "⚠️ OpenRouter 연결 실패, Ollama로 폴백 시도했으나 Ollama도 연결 실패했습니다."
+                                            return "⚠️ OpenRouter 연결 실패, Ollama로 폴백하여 설정 저장 완료."
+                                        
+                                        self.model_loaded = (result is not None)
+                                        if self.model_loaded:
+                                            return f"✅ 설정 저장 완료! ({llm_settings['provider'].upper()} 연결 성공)"
+                                        else:
+                                            return f"⚠️ 설정 저장 완료, 하지만 {llm_settings['provider'].upper()} 연결 실패"
+                                    else:
+                                        return "✅ 설정 저장 완료! (다음 시작 시 적용됩니다)"
+                                except Exception as e:
+                                    logger.error(f"Failed to reinitialize Brain: {e}")
+                                    return f"✅ 설정 저장 완료, 하지만 모델 재연결 실패: {str(e)}"
+                            else:
+                                return "❌ 설정 저장 실패"
+                        except Exception as e:
+                            logger.error(f"Failed to save LLM settings: {e}")
+                            return f"❌ 설정 저장 실패: {str(e)}"
+                    
+                    save_settings_btn.click(
+                        save_llm_settings,
+                        inputs=[llm_provider, ollama_model_input, openrouter_api_key_input, openrouter_model_input],
+                        outputs=[settings_status]
+                    )
             
             # 첫 탭의 버튼 클릭 시 대화 탭 컴포넌트 업데이트 (탭 밖에서 정의)
             start_btn.click(

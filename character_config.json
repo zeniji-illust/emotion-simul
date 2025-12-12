@@ -11,13 +11,13 @@
     "personality": "밝고 활발하지만 좋아하는 사람 앞에서는 수줍음이 많음"
   },
   "initial_stats": {
-    "P": 50.0,
-    "A": 66.0,
-    "D": 30.0,
-    "I": 50.0,
-    "T": 50.0,
-    "Dep": 40.0
+    "P": 70.0,
+    "A": 70.0,
+    "D": 0.0,
+    "I": 70.0,
+    "T": 70.0,
+    "Dep": 70.0
   },
-  "initial_context": "예나랑은 처음 만난다. 소개팅을 하게 되었다. 예나는 나를 사실 좋아하고 있다. 이상형이라고 생각한다. 예나가 졸라서 소개팅을 하게 되었다.",
-  "initial_background": "modern metallic glass cafe, table, coffee"
+  "initial_context": "예나는 내 노예가 되어가고 있다. 예나는 나를 문돼남이 아니라 주인님이라고 부른다. 예나는 나에게 매달리고 관계의 주도권은 내가 가지고 있다. 예나는 나를 바라보며 무릎 꿇고 있다. ",
+  "initial_background": "cozy room, bed"
 }

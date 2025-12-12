@@ -23,8 +23,13 @@ logger = logging.getLogger("Brain")
 class Brain:
     """The Director: 게임 흐름 통제"""
     
-    def __init__(self, dev_mode: bool = False):
-        self.memory_manager = MemoryManager(dev_mode=dev_mode)
+    def __init__(self, dev_mode: bool = False, provider: str = None, model_name: str = None, api_key: str = None):
+        self.memory_manager = MemoryManager(
+            dev_mode=dev_mode,
+            provider=provider,
+            model_name=model_name,
+            api_key=api_key
+        )
         self.state = CharacterState()
         self.history = DialogueHistory(max_turns=5)
         self.turns_since_image = 0

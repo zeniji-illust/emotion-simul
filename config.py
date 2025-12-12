@@ -53,10 +53,10 @@ STATUS_TRANSITIONS = {
 
 # 가챠 시스템 설정
 GACHA_TIERS = {
-    "jackpot": {"prob": 0.005, "multiplier": 5.0},  # 0.5%
-    "surprise": {"prob": 0.02, "multiplier": 2.5},  # 2.0%
-    "critical": {"prob": 0.075, "multiplier": 1.5},  # 7.5%
-    "normal": {"prob": 0.9, "multiplier": 1.0}     # 90%
+    "jackpot": {"prob": 0.01, "multiplier": 5.0},  # 1.0%
+    "surprise": {"prob": 0.04, "multiplier": 2.5},  # 4.0%
+    "critical": {"prob": 0.15, "multiplier": 1.5},  # 15.0%
+    "normal": {"prob": 0.8, "multiplier": 1.0}     # 80.0%
 }
 
 # 이미지 생성 트리거 설정
@@ -66,11 +66,18 @@ IMAGE_GENERATION_TRIGGERS = {
     "status_transitions": ["Girlfriend", "Wife", "Master", "Slave"]
 }
 
+# LLM Provider 설정
+LLM_PROVIDER = "ollama"  # "ollama" 또는 "openrouter"
+
 # Ollama API 설정
 OLLAMA_API_URL = "http://localhost:11434"
 OLLAMA_MODEL_NAME = "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest" 
 
-# LLM 설정 (Ollama 호환)
+# OpenRouter API 설정
+OPENROUTER_API_KEY = ""  # 환경설정에서 설정
+OPENROUTER_MODEL = "qwen/qwen-2.5-14b-instruct"  # 기본 모델
+
+# LLM 설정 (Ollama/OpenRouter 호환)
 LLM_CONFIG = {
     "temperature": 0.7,
     "top_p": 0.9,
