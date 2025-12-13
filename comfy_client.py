@@ -24,8 +24,9 @@ logger = logging.getLogger("ComfyClient")
 class ComfyClient:
     """ComfyUI API 클라이언트"""
     
-    def __init__(self, server_address: str = None):
+    def __init__(self, server_address: str = None, model_name: str = None):
         self.server_address = server_address or config.COMFYUI_CONFIG["server_address"]
+        self.model_name = model_name or config.COMFYUI_CONFIG.get("model_name", "Zeniji_mix_ZiT_v1.safetensors")
         self.client_id = str(uuid.uuid4())
         self.ws: Optional[websocket.WebSocketApp] = None
         self.ws_connected = False
@@ -169,6 +170,11 @@ class ComfyClient:
         # 노드 "7": CLIPTextEncode (Negative Prompt)
         if "7" in workflow and negative_prompt:
             workflow["7"]["inputs"]["text"] = negative_prompt
+        
+        # 노드 "16": UNETLoader - 모델 이름 설정
+        if "16" in workflow:
+            workflow["16"]["inputs"]["unet_name"] = self.model_name
+            logger.info(f"Model name set to: {self.model_name}")
         
         # 노드 "3": KSampler - 시드 설정 (항상 랜덤)
         if "3" in workflow:

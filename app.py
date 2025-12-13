@@ -152,6 +152,10 @@ class GameApp:
                 "provider": "ollama",
                 "ollama_model": "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest",
                 "openrouter_model": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
+            },
+            "comfyui_settings": {
+                "server_port": 8000,
+                "model_name": "Zeniji_mix_ZiT_v1.safetensors"
             }
         }
     
@@ -321,8 +325,13 @@ class GameApp:
                 try:
                     # ComfyClient 초기화 (아직 안 되어 있으면)
                     if self.comfy_client is None:
-                        self.comfy_client = ComfyClient()
-                        logger.info("ComfyClient initialized")
+                        # ComfyUI 설정 로드
+                        comfyui_settings = config_data.get("comfyui_settings", {})
+                        server_port = comfyui_settings.get("server_port", 8000)
+                        model_name = comfyui_settings.get("model_name", "Zeniji_mix_ZiT_v1.safetensors")
+                        server_address = f"127.0.0.1:{server_port}"
+                        self.comfy_client = ComfyClient(server_address=server_address, model_name=model_name)
+                        logger.info(f"ComfyClient initialized: {server_address}, model: {model_name}")
                     
                     # appearance와 background를 조합해서 이미지 생성
                     appearance = config_data["character"].get("appearance", "")
@@ -568,8 +577,14 @@ class GameApp:
             try:
                 # ComfyClient 초기화 (아직 안 되어 있으면)
                 if self.comfy_client is None:
-                    self.comfy_client = ComfyClient()
-                    logger.info("ComfyClient initialized")
+                    # ComfyUI 설정 로드
+                    saved_config = self.load_config()
+                    comfyui_settings = saved_config.get("comfyui_settings", {})
+                    server_port = comfyui_settings.get("server_port", 8000)
+                    model_name = comfyui_settings.get("model_name", "Zeniji_mix_ZiT_v1.safetensors")
+                    server_address = f"127.0.0.1:{server_port}"
+                    self.comfy_client = ComfyClient(server_address=server_address, model_name=model_name)
+                    logger.info(f"ComfyClient initialized: {server_address}, model: {model_name}")
                 
                 # 설정에서 appearance와 나이 가져오기
                 saved_config = self.load_config()
@@ -1007,6 +1022,69 @@ class GameApp:
                         save_llm_settings,
                         inputs=[llm_provider, ollama_model_input, openrouter_api_key_input, openrouter_model_input],
                         outputs=[settings_status]
+                    )
+                    
+                    gr.Markdown("---")
+                    gr.Markdown("## ComfyUI 설정")
+                    
+                    # ComfyUI 설정 로드
+                    comfyui_settings = saved_config.get("comfyui_settings", {})
+                    comfyui_port = comfyui_settings.get("server_port", 8000)
+                    comfyui_model = comfyui_settings.get("model_name", "Zeniji_mix_ZiT_v1.safetensors")
+                    
+                    comfyui_port_input = gr.Number(
+                        label="ComfyUI 서버 포트",
+                        value=comfyui_port,
+                        minimum=1,
+                        maximum=65535,
+                        step=1,
+                        info="ComfyUI 서버가 실행 중인 포트 번호 (기본값: 8000)"
+                    )
+                    comfyui_model_input = gr.Textbox(
+                        label="ComfyUI 모델 이름",
+                        value=comfyui_model,
+                        placeholder="예: Zeniji_mix_ZiT_v1.safetensors",
+                        info="ComfyUI에서 사용할 모델 파일 이름 (확장자 포함)"
+                    )
+                    
+                    comfyui_status = gr.Markdown("")
+                    save_comfyui_btn = gr.Button("💾 ComfyUI 설정 저장", variant="primary")
+                    
+                    def save_comfyui_settings(port_val, model_val):
+                        """ComfyUI 설정 저장"""
+                        try:
+                            config_data = self.load_config()
+                            
+                            # ComfyUI 설정 업데이트
+                            if "comfyui_settings" not in config_data:
+                                config_data["comfyui_settings"] = {}
+                            
+                            config_data["comfyui_settings"]["server_port"] = int(port_val) if port_val else 8000
+                            config_data["comfyui_settings"]["model_name"] = model_val or "Zeniji_mix_ZiT_v1.safetensors"
+                            
+                            # 설정 저장
+                            if self.save_config(config_data):
+                                # ComfyClient 재초기화 (새 설정 적용)
+                                try:
+                                    if self.comfy_client is not None:
+                                        server_address = f"127.0.0.1:{config_data['comfyui_settings']['server_port']}"
+                                        model_name = config_data['comfyui_settings']['model_name']
+                                        self.comfy_client = ComfyClient(server_address=server_address, model_name=model_name)
+                                        logger.info(f"ComfyClient 재초기화 완료: {server_address}, model: {model_name}")
+                                    return "✅ ComfyUI 설정 저장 완료! (다음 이미지 생성 시 적용됩니다)"
+                                except Exception as e:
+                                    logger.error(f"Failed to reinitialize ComfyClient: {e}")
+                                    return f"✅ ComfyUI 설정 저장 완료, 하지만 클라이언트 재연결 실패: {str(e)}"
+                            else:
+                                return "❌ ComfyUI 설정 저장 실패"
+                        except Exception as e:
+                            logger.error(f"Failed to save ComfyUI settings: {e}")
+                            return f"❌ ComfyUI 설정 저장 실패: {str(e)}"
+                    
+                    save_comfyui_btn.click(
+                        save_comfyui_settings,
+                        inputs=[comfyui_port_input, comfyui_model_input],
+                        outputs=[comfyui_status]
                     )
             
             # 첫 탭의 버튼 클릭 시 대화 탭 컴포넌트 업데이트 (탭 밖에서 정의)

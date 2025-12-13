@@ -87,7 +87,8 @@ LLM_CONFIG = {
 # ComfyUI 설정
 COMFYUI_CONFIG = {
     "server_address": "127.0.0.1:8000",
-    "workflow_path": "workflows/comfyui_zit.json"
+    "workflow_path": "workflows/comfyui_zit.json",
+    "model_name": "Zeniji_mix_ZiT_v1.safetensors"  # 기본 모델 이름
 }
 
 # Trauma 레벨 분류
