@@ -7,6 +7,8 @@
 
 ZEMS의 핵심 기능인 감정 시뮬레이션 및 이미지 생성을 경험해 보시고, 많은 피드백 부탁드립니다.
 
+(커뮤니티 : https://arca.live/b/zeniji)
+
 
 📥 1단계: ZEMS 프로젝트 다운로드 (Git Clone)
 
