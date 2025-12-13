@@ -389,9 +389,9 @@ JSON
 
 ```
 {{
-    "thought": "캐릭터의 속마음, 기분과 상황을 종합적으로 판단해 동적으로 반응하세요. (한국어)",
-    "speech": "캐릭터의 대사, 속마음과 상황을 종합적으로 판단해 동적으로 반응하세요. (한국어, 괄호/동작지침 금지)",
-    "action_speech": "캐릭터의 자세 및 시선 처리 (3인칭 관찰자 시점, 한국어)",
+    "thought": "캐릭터의 속마음, 기분과 상황을 종합적으로 판단해 동적으로 반응하세요. (**한국어**)",
+    "speech": "캐릭터의 대사, 속마음과 상황을 종합적으로 판단해 동적으로 반응하세요. (**한국어**, 괄호/동작지침 금지)",
+    "action_speech": "캐릭터의 자세 및 시선 처리 (3인칭 관찰자 시점, **한국어**)",
     "emotion": "happy/shy/neutral/annoyed/sad/excited/nervous",
     "visual_change_detected": true/false,
     "visual_prompt": "English tags: expression, attire, nudity, pose, background (max 200 chars and mininum 10 words)",
