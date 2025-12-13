@@ -75,8 +75,8 @@ class UIComponents:
             "jackpot": "🎰",
             "surprise": "✨",
             "badge": "🏆",
-            "Girlfriend": "💕",
-            "Wife": "💍",
+            "Lover": "💕",
+            "Partner": "💍",
             "Divorce": "💔",
             "Tempted": "😈",
             "slave": "🔗",
@@ -89,8 +89,8 @@ class UIComponents:
             "jackpot": "극진한 반응!",
             "surprise": "놀라운 반응!",
             "badge": "뱃지 획득!",
-            "Girlfriend": "관계 발전!",
-            "Wife": "결혼!",
+            "Lover": "관계 발전!",
+            "Partner": "결혼!",
             "Divorce": "이혼",
             "Tempted": "유혹",
             "slave": "노예",
@@ -104,7 +104,7 @@ class UIComponents:
         
         if event_type == "badge":
             message = f"<strong>{event_data.get('badge_name', '')}</strong> 뱃지를 획득했습니다!"
-        elif event_type in ["Girlfriend", "Wife", "fiancee", "Tempted", "slave", "master"]:
+        elif event_type in ["Lover", "Partner", "fiancee", "Tempted", "slave", "master"]:
             message = f"관계가 <strong>{event_data.get('new_status', event_type)}</strong>로 발전했습니다!"
         elif event_type in ["Divorce", "breakup"]:
             message = f"관계가 <strong>{event_data.get('new_status', event_type)}</strong>로 변경되었습니다."

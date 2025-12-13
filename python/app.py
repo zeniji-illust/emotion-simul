@@ -38,6 +38,7 @@ class GameApp:
         self.current_chart: Optional[go.Figure] = None  # 이전 차트 저장 (로딩 중 유지용)
         self.comfy_client = None
         self.previous_relationship: Optional[str] = None  # 이전 관계 상태 (모달용)
+        self.previous_badges: set = set()  # 이전 턴의 뱃지 목록 (알림용)
         self.last_image_generation_info: Optional[Dict[str, str]] = None  # 마지막 이미지 생성 정보 (visual_prompt, appearance)
         
         # 분리된 모듈 초기화
@@ -108,7 +109,7 @@ class GameApp:
         appearance, personality,
         p_val, a_val, d_val, i_val, t_val, dep_val,
         initial_context, initial_background
-    ) -> Tuple[str, str, list, str, str, str, str, str, str]:
+    ) -> Tuple[str, str, list, str, str, str, str, str, str, Any, Any, Any]:
         """설정 검증 및 시작 (첫 대화 자동 생성) - GameInitializer로 위임"""
         return GameInitializer.validate_and_start(
             self,
@@ -322,7 +323,7 @@ class GameApp:
             logger.info(f"Relationship changed: {self.previous_relationship} -> {relationship}")
         
         # 관계 상태가 특정 상태로 변경된 경우
-        if relationship_changed and relationship in ["Girlfriend", "Wife", "Divorce", "Tempted", "slave", "master", "fiancee", "breakup"]:
+        if relationship_changed and relationship in ["Lover", "Partner", "Divorce", "Tempted", "slave", "master", "fiancee", "breakup"]:
             logger.info(f"Creating relationship change notification: {relationship}")
             events_to_show.append((relationship, {
                 "new_status": relationship,
@@ -333,17 +334,16 @@ class GameApp:
             logger.debug(f"Relationship changed but not in trigger list: {relationship}")
         
         # 2. Badge 이벤트 체크 (뱃지는 중요해서 관계와 겹쳐도 표시)
-        # 단, 이미 획득한 뱃지는 알림 표시하지 않음
+        # 이전 턴의 뱃지 목록과 비교하여 새로 획득한 뱃지만 알림 표시
         if new_badge:
-            current_badges = response.get('badges', [])
-            # new_badge가 현재 보유한 뱃지 목록에 없을 때만 알림 표시 (새로 획득한 뱃지)
-            if new_badge not in current_badges:
+            # 이전 턴에 없던 뱃지인 경우에만 알림 표시
+            if new_badge not in self.previous_badges:
                 logger.info(f"Creating badge notification for new badge: {new_badge}")
                 events_to_show.append(("badge", {
                     "badge_name": new_badge
                 }))
             else:
-                logger.debug(f"Badge {new_badge} already owned, skipping notification")
+                logger.debug(f"Badge {new_badge} already owned in previous turn, skipping notification")
         
         # 3. Gacha tier 이벤트 체크 (다른 이벤트가 없을 때만)
         if not events_to_show and gacha_tier in ["jackpot", "surprise"]:
@@ -360,6 +360,15 @@ class GameApp:
         if self.previous_relationship is None:
             logger.info(f"Initializing previous_relationship: {relationship}")
         self.previous_relationship = relationship
+        
+        # 이전 뱃지 목록 업데이트 (현재 뱃지 목록 저장)
+        current_badges = response.get('badges', [])
+        if isinstance(current_badges, list):
+            self.previous_badges = set(current_badges)
+        elif isinstance(current_badges, set):
+            self.previous_badges = current_badges.copy()
+        else:
+            self.previous_badges = set()
         
         # Radar chart 생성 (이전 차트가 있으면 먼저 반환하고, 새 차트 생성 후 업데이트)
         # 이전 차트를 먼저 반환하여 로딩 중에도 차트가 보이도록 함

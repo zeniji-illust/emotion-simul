@@ -6,7 +6,7 @@ Zeniji Emotion Simul - Brain (The Director)
 import json
 import re
 import logging
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, Tuple
 from .state_manager import CharacterState, DialogueHistory, DialogueTurn
 from . import config
 from .logic_engine import (
@@ -52,8 +52,12 @@ class Brain:
             logger.info(f"Status transition: {self.state.relationship_status} -> {new_status}")
             self.state.relationship_status = new_status
         
-        # 2. LLM 호출 (첫 턴도 포함)
-        llm_response = self._call_llm(player_input)
+        # 2. LLM 호출 (첫 턴도 포함) - 장기 기억 업데이트 포함
+        llm_response, long_memory_summary = self._call_llm(player_input)
+        
+        # 장기 기억 업데이트 (LLM이 제공한 경우)
+        if long_memory_summary:
+            self.state.long_memory = long_memory_summary
         
         # Ollama 원본 응답 로그 출력 (dev_mode일 때만)
         if self.dev_mode:
@@ -190,7 +194,7 @@ class Brain:
         # LLM 보고 관계 전환 처리
         if data.get("relationship_status_change", False):
             new_status_name = data.get("new_status_name", "")
-            if new_status_name in ["Girlfriend", "Fiancée", "Wife"]:
+            if new_status_name in ["Lover", "Fiancée", "Partner"]:
                 self.state.relationship_status = new_status_name
                 response["relationship_status"] = new_status_name
                 logger.info(f"LLM reported status change: {new_status_name}")
@@ -201,8 +205,8 @@ class Brain:
         
         return response
     
-    def _call_llm(self, player_input: str) -> str:
-        """LLM 호출 (Ollama API)"""
+    def _call_llm(self, player_input: str) -> Tuple[str, str]:
+        """LLM 호출 (Ollama API) - 응답과 장기 기억 요약을 함께 반환"""
         result = self.memory_manager.get_model()
         if result is None:
             error_msg = (
@@ -214,7 +218,7 @@ class Brain:
             )
             raise RuntimeError(error_msg)
         
-        # 프롬프트 조립
+        # 프롬프트 조립 (장기 기억 업데이트 지시 포함)
         prompt = self._build_prompt(player_input)
         
         # 시스템 프롬프트 로그 출력 (dev_mode일 때만)
@@ -227,7 +231,7 @@ class Brain:
         
         logger.info("Calling LLM API...")
         try:
-            # Ollama API 호출
+            # Ollama API 호출 (장기 기억 업데이트 포함)
             response_text = self.memory_manager.generate(
                 prompt,
                 temperature=config.LLM_CONFIG["temperature"],
@@ -238,7 +242,20 @@ class Brain:
             if not response_text or not response_text.strip():
                 raise ValueError("Ollama returned empty response")
             
-            return response_text
+            # JSON 파싱하여 장기 기억 추출
+            long_memory_summary = ""
+            try:
+                parsed_data = self._parse_json(response_text)
+                long_memory_summary = parsed_data.get("long_memory_summary", "").strip()
+                if long_memory_summary:
+                    # 200자 제한
+                    long_memory_summary = long_memory_summary[:200]
+                    logger.info(f"장기 기억 업데이트: {long_memory_summary[:50]}...")
+            except Exception as e:
+                logger.warning(f"장기 기억 추출 실패 (계속 진행): {e}")
+                # 장기 기억 추출 실패해도 응답은 계속 진행
+            
+            return response_text, long_memory_summary
         except Exception as e:
             logger.error(f"Ollama API call failed: {e}")
             import traceback
@@ -260,6 +277,30 @@ class Brain:
         
         # 히스토리
         history_text = self.history.format_for_prompt()
+        
+        # 장기 기억 섹션 (history_text 밑에 추가)
+        long_memory_section = ""
+        long_memory_instruction = ""
+        if self.state.total_turns > 0 and self.history.turns:
+            # 기존 장기 기억이 있으면 표시
+            if self.state.long_memory:
+                long_memory_section = f"""
+- **장기 기억** (중요: 이것은 장기 기억입니다. 중요하게 사용하세요.):
+{self.state.long_memory}
+"""
+            
+            # 장기 기억 업데이트 지시 추가 (두 번째 턴부터)
+            existing_memory = self.state.long_memory if self.state.long_memory else "아직 장기 기억이 없습니다."
+            long_memory_instruction = f"""
+## 6. 장기 기억 업데이트 (중요)
+
+위의 대화 기록과 기존 장기 기억을 바탕으로, 중요한 내용만 200자 이하로 요약하여 `long_memory_summary` 필드에 포함해주세요.
+특히 관계 발전, 중요한 이벤트, 캐릭터의 감정 변화 등을 중심으로 요약하세요.
+
+기존 장기 기억: {existing_memory}
+
+`long_memory_summary`는 선택적 필드이지만, 중요한 변화가 있었거나 기억할 만한 내용이 있다면 반드시 포함해주세요.
+"""
         
         # 현재 배경 정보
         current_background = self.state.current_background
@@ -406,7 +447,7 @@ class Brain:
 - **트라우마 레벨**: {self.state.trauma_level:.2f} ({config.TRAUMA_LEVELS.get(round(self.state.trauma_level * 4) / 4, "Unknown")})
 - **기타 특수 명령**: {special_commands_text}
 - **대화 기록**: 
-{history_text}
+{history_text}{long_memory_section}
     
 
 ## 5. 출력 형식 (JSON Only)
@@ -416,7 +457,8 @@ JSON
 ```
 {{
     "thought": "캐릭터의 속마음, 기분과 상황을 종합적으로 판단해 동적으로 반응하세요. (**한국어**)",
-    "speech": "캐릭터의 대사, 속마음과 상황을 종합적으로 판단해 동적으로 반응하세요. (**한국어**, 괄호/동작지침 금지)",
+    "speech": "캐릭터의 대사, 속마음과 상황을 종합적으로 판단해 동적으로 반응하세요. 
+    이전 대화 기록에서와 같은 말을 반복하지 마세요. 할 말이 없으면 "..."을 활용하세요. (**한국어**, 괄호/동작지침 금지)",
     "action_speech": "캐릭터의 자세 및 시선 처리 (3인칭 관찰자 시점, **한국어**)",
     "emotion": "happy/shy/neutral/annoyed/sad/excited/nervous",
     "visual_change_detected": true/false,
@@ -425,10 +467,11 @@ JSON
     "reason": "이미지 변화 수치 혹은 상황적 이유",
     "proposed_delta": {{"P": 0, "A": 0, "D": 0, "I": 0, "T": 0, "Dep": 0}},
     "relationship_status_change": false,
-    "new_status_name": ""
+    "new_status_name": "",
+    "long_memory_summary": "200자 이하로 지금까지의 중요한 기억을 요약 (선택적 필드, 중요한 변화가 있을 때만 포함)"
 }}
 ```
-
+{long_memory_instruction}
 **{player_name}님의 입력: "{player_input}"** 
 위 입력을 바탕으로 캐릭터로서 반응하십시오.
 반드시 JSON으로 응답하십시오.
@@ -446,19 +489,19 @@ JSON
             return ""
         
         # LLM 보고가 필요한 상태만 필터링
-        llm_states = [s for s in possible_next if s in ["Girlfriend", "Fiancée", "Wife"]]
+        llm_states = [s for s in possible_next if s in ["Lover", "Fiancée", "Partner"]]
         
         if not llm_states:
             return ""
         
         instruction = f"[전환 규칙] 당신은 현재 {current} 상태입니다. "
         for state in llm_states:
-            if state == "Girlfriend":
-                instruction += "I가 높고 T가 안정적인 상태에서 '고백' 또는 '사랑' 키워드가 포함되면 relationship_status_change를 true로 설정하고 new_status_name을 'Girlfriend'로 보고하세요. "
+            if state == "Lover":
+                instruction += "I가 높고 T가 안정적인 상태에서 '고백' 또는 '사랑' 키워드가 포함되면 relationship_status_change를 true로 설정하고 new_status_name을 'Lover'로 보고하세요. "
             elif state == "Fiancée":
                 instruction += "I >= 90, T >= 85 상태에서 '약혼' 또는 '청혼' 키워드가 포함되면 relationship_status_change를 true로 설정하고 new_status_name을 'Fiancée'로 보고하세요. "
-            elif state == "Wife":
-                instruction += "I가 최고치에 도달한 상태에서 '결혼' 또는 '부부' 키워드가 포함되면 relationship_status_change를 true로 설정하고 new_status_name을 'Wife'로 보고하세요. "
+            elif state == "Partner":
+                instruction += "I가 최고치에 도달한 상태에서 '결혼' 또는 '부부' 키워드가 포함되면 relationship_status_change를 true로 설정하고 new_status_name을 'Partner'로 보고하세요. "
         
         return instruction
     

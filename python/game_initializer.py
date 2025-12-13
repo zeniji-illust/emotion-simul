@@ -4,7 +4,7 @@ Game Initializer - 게임 시작 및 초기화 로직
 
 import gradio as gr
 import logging
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Any
 from PIL import Image
 import io
 from . import config
@@ -25,7 +25,7 @@ class GameInitializer:
         appearance, personality,
         p_val, a_val, d_val, i_val, t_val, dep_val,
         initial_context, initial_background
-    ) -> Tuple[str, str, list, str, str, str, str, str, str]:
+    ) -> Tuple[str, str, list, str, str, str, str, str, str, Any, Any, Any]:
         """설정 검증 및 시작 (첫 대화 자동 생성)"""
         # Slider 값들이 None이면 기본값 사용
         p_val = p_val if p_val is not None else 50.0
@@ -41,11 +41,12 @@ class GameInitializer:
         stats = {"P": p_val, "A": a_val, "D": d_val, "I": i_val, "T": t_val, "Dep": dep_val}
         exceeded = [k for k, v in stats.items() if v > max_val]
         
-        # 에러 시 기본값 반환
+        # 에러 시 기본값 반환 (입력창 상태 포함)
         empty_result = (
             "⚠️ 경고: 다음 수치가 70을 초과합니다: " + ", ".join(exceeded) if exceeded else "❌ 오류 발생",
             gr.Tabs(selected=None),
-            [], "", "", None, "", "", ""
+            [], "", "", None, "", "", "", None,
+            gr.Button(interactive=False), gr.Textbox(interactive=False)
         )
         
         if exceeded:
@@ -81,7 +82,7 @@ class GameInitializer:
         # 모델 로드
         status_msg, success = app_instance.load_model()
         if not success:
-            return (f"❌ 모델 로드 실패: {status_msg}", gr.Tabs(selected=None), [], "", "", None, "", "", "")
+            return (f"❌ 모델 로드 실패: {status_msg}", gr.Tabs(selected=None), [], "", "", None, "", "", "", None, gr.Button(interactive=False), gr.Textbox(interactive=False))
         
         # Brain 초기화 및 설정 적용
         try:
@@ -134,7 +135,7 @@ class GameInitializer:
             logger.info("Initial configuration applied to Brain")
         except Exception as e:
             logger.error(f"Failed to apply config: {e}")
-            return (f"❌ 설정 적용 실패: {str(e)}", gr.Tabs(selected=None), [], "", "", None, "", "", "")
+            return (f"❌ 설정 적용 실패: {str(e)}", gr.Tabs(selected=None), [], "", "", None, "", "", "", None, gr.Button(interactive=False), gr.Textbox(interactive=False))
         
         # 첫 대화 자동 생성
         try:
@@ -223,10 +224,11 @@ class GameInitializer:
             
             status_msg = "✅ 설정 저장 및 첫 대화 생성 완료!"
             # 탭 전환: chat_tab의 id를 사용
-            return (status_msg, gr.Tabs(selected="chat_tab"), history, output_text, stats_text, initial_image, choices_text, thought_text, action_text, initial_chart)
+            # 입력창과 전송 버튼 활성화 상태도 함께 반환
+            return (status_msg, gr.Tabs(selected="chat_tab"), history, output_text, stats_text, initial_image, choices_text, thought_text, action_text, initial_chart, gr.Button(interactive=True), gr.Textbox(interactive=True))
         except Exception as e:
             logger.error(f"Failed to generate first dialogue: {e}")
             import traceback
             logger.error(traceback.format_exc())
-            return (f"✅ 설정 저장 완료, 하지만 첫 대화 생성 실패: {str(e)}", gr.Tabs(selected="chat_tab"), [], "", "", None, "", "", "", None)
+            return (f"✅ 설정 저장 완료, 하지만 첫 대화 생성 실패: {str(e)}", gr.Tabs(selected="chat_tab"), [], "", "", None, "", "", "", None, gr.Button(interactive=True), gr.Textbox(interactive=True))
 

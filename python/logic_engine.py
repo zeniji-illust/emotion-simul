@@ -138,11 +138,11 @@ def check_status_transition(state: CharacterState) -> Tuple[bool, Optional[str]]
             return True, "Slave"
     
     # 1순위: 이탈 검사 (Breakup/Divorce)
-    if state.relationship_status in ["Girlfriend", "Master", "Slave"]:
+    if state.relationship_status in ["Lover", "Master", "Slave"]:
         if state.I <= 30 or state.T <= 30:
             return True, "Breakup"
     
-    if state.relationship_status in ["Wife", "Fiancée"]:
+    if state.relationship_status in ["Partner", "Fiancée"]:
         if state.I <= 30 or state.T <= 30:
             return True, "Divorce"
     

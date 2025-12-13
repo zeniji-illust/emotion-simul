@@ -36,6 +36,9 @@ class CharacterState:
     # 현재 배경 (장소/환경)
     current_background: str = "college library table, evening light"
     
+    # 장기 기억 (LLM이 요약한 중요 기억)
+    long_memory: str = ""
+    
     def clamp(self):
         """모든 수치를 0-100 범위로 제한"""
         self.P = max(0.0, min(100.0, self.P))
@@ -118,6 +121,7 @@ class CharacterState:
         self.total_turns = data.get("total_turns", 0)
         self.trauma_level = data.get("trauma_level", 0.0)  # 저장은 하지만 UI에 안 보임
         self.current_background = data.get("current_background", "college library table, evening light")
+        self.long_memory = data.get("long_memory", "")  # 장기 기억 복원
         self.clamp()
 
 

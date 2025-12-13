@@ -467,11 +467,23 @@ class UIBuilder:
                                 if "total_turns" in state_data:
                                     state.total_turns = state_data["total_turns"]
                                 
+                                # 장기 기억 복원
+                                if "long_memory" in state_data:
+                                    state.long_memory = state_data["long_memory"]
+                                
                                 # mood는 interpret_mood로 계산되는 값
                                 from .logic_engine import interpret_mood
                                 calculated_mood = interpret_mood(state)
                                 
                                 logger.info(f"State restored: relationship={state.relationship_status}, mood={calculated_mood}, badges={list(state.badges)}, background={state.current_background}, turns={state.total_turns}")
+                                
+                                # 이전 뱃지 목록도 복원 (알림용)
+                                if isinstance(state.badges, list):
+                                    app_instance.previous_badges = set(state.badges)
+                                elif isinstance(state.badges, set):
+                                    app_instance.previous_badges = state.badges.copy()
+                                else:
+                                    app_instance.previous_badges = set()
                             
                             # 문맥 정보 복원 (최근 턴)
                             if app_instance.brain is not None and "context" in scenario_data:
@@ -729,7 +741,8 @@ Dep (의존): {stats.get('Dep', 0):.0f}<br>
                                     "badges": list(state.badges) if hasattr(state, 'badges') else [],
                                     "trauma_level": state.trauma_level if hasattr(state, 'trauma_level') else 0.0,
                                     "current_background": state.current_background if hasattr(state, 'current_background') else "",
-                                    "total_turns": state.total_turns if hasattr(state, 'total_turns') else 0
+                                    "total_turns": state.total_turns if hasattr(state, 'total_turns') else 0,
+                                    "long_memory": state.long_memory if hasattr(state, 'long_memory') else ""  # 장기 기억 저장
                                 }
                                 
                                 # 초기 설정 정보 (프롬프트에 필수)
@@ -1152,7 +1165,8 @@ Dep (의존): {stats.get('Dep', 0):.0f}<br>
                 outputs=[
                     setup_status, tabs,
                     chatbot, gr.Textbox(visible=False), stats_display, image_display,
-                    gr.Textbox(visible=False), thought_display, action_display, stats_chart
+                    gr.Textbox(visible=False), thought_display, action_display, stats_chart,
+                    submit_btn, user_input
                 ]
             )
             

@@ -47,22 +47,22 @@ STATUS_TRANSITIONS = {
         "condition": {"I": 40}
     },
     "Acquaintance": {
-        "to": ["Tempted", "Girlfriend"],
+        "to": ["Tempted", "Lover"],
         "condition": {"I": 60}
     },
     "Tempted": {
-        "to": ["Girlfriend", "Master", "Slave"],
+        "to": ["Lover", "Master", "Slave"],
         "condition": {"P": 80, "A": 80, "D": 40}
     },
-    "Girlfriend": {
-        "to": ["Fiancée", "Wife", "Breakup", "Master", "Slave"],
+    "Lover": {
+        "to": ["Fiancée", "Partner", "Breakup", "Master", "Slave"],
         "condition": {"I": 80, "T": 60}
     },
     "Fiancée": {
-        "to": ["Wife", "Divorce"],
+        "to": ["Partner", "Divorce"],
         "condition": {"I": 90, "T": 85}
     },
-    "Wife": {
+    "Partner": {
         "to": ["Divorce", "Master", "Slave"],
         "condition": {}
     },
@@ -96,7 +96,7 @@ GACHA_TIERS = {
 IMAGE_GENERATION_TRIGGERS = {
     "force_refresh_turns": 5,  # N턴마다 강제 갱신
     "critical_gacha_tiers": ["jackpot", "surprise"],
-    "status_transitions": ["Girlfriend", "Wife", "Master", "Slave"]
+    "status_transitions": ["Lover", "Partner", "Master", "Slave"]
 }
 
 # LLM Provider 설정
