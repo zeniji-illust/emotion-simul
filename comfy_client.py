@@ -24,9 +24,14 @@ logger = logging.getLogger("ComfyClient")
 class ComfyClient:
     """ComfyUI API 클라이언트"""
     
-    def __init__(self, server_address: str = None, model_name: str = None):
+    def __init__(self, server_address: str = None, workflow_path: str = None, model_name: str = None, steps: int = None, cfg: float = None, sampler_name: str = None, scheduler: str = None):
         self.server_address = server_address or config.COMFYUI_CONFIG["server_address"]
+        self.workflow_path = workflow_path or config.COMFYUI_CONFIG["workflow_path"]
         self.model_name = model_name or config.COMFYUI_CONFIG.get("model_name", "Zeniji_mix_ZiT_v1.safetensors")
+        self.steps = steps if steps is not None else 9
+        self.cfg = cfg if cfg is not None else 1.0
+        self.sampler_name = sampler_name or "euler"
+        self.scheduler = scheduler or "simple"
         self.client_id = str(uuid.uuid4())
         self.ws: Optional[websocket.WebSocketApp] = None
         self.ws_connected = False
@@ -142,7 +147,7 @@ class ComfyClient:
         seed: 시드값 (-1이면 랜덤)
         """
         # 워크플로우 로드
-        workflow_path = Path(config.COMFYUI_CONFIG["workflow_path"])
+        workflow_path = Path(self.workflow_path)
         if not workflow_path.exists():
             logger.error(f"Workflow file not found: {workflow_path}")
             return None
@@ -176,13 +181,20 @@ class ComfyClient:
             workflow["16"]["inputs"]["unet_name"] = self.model_name
             logger.info(f"Model name set to: {self.model_name}")
         
-        # 노드 "3": KSampler - 시드 설정 (항상 랜덤)
+        # 노드 "3": KSampler - 시드 및 생성 파라미터 설정
         if "3" in workflow:
-            # 항상 1부터 1046271897565195까지 랜덤 정수 생성
+            # 시드 설정 (항상 랜덤)
             max_seed = 1046271897565195
             random_seed = random.randint(1, max_seed)
             workflow["3"]["inputs"]["seed"] = random_seed
-            logger.info(f"Random seed generated: {random_seed}")
+            
+            # 생성 파라미터 설정
+            workflow["3"]["inputs"]["steps"] = self.steps
+            workflow["3"]["inputs"]["cfg"] = self.cfg
+            workflow["3"]["inputs"]["sampler_name"] = self.sampler_name
+            workflow["3"]["inputs"]["scheduler"] = self.scheduler
+            
+            logger.info(f"KSampler 설정: seed={random_seed}, steps={self.steps}, cfg={self.cfg}, sampler={self.sampler_name}, scheduler={self.scheduler}")
         
         # 웹소켓 연결
         self._connect_websocket()

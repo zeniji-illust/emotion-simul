@@ -155,7 +155,12 @@ class GameApp:
             },
             "comfyui_settings": {
                 "server_port": 8000,
-                "model_name": "Zeniji_mix_ZiT_v1.safetensors"
+                "workflow_path": "workflows/comfyui_zit.json",
+                "model_name": "Zeniji_mix_ZiT_v1.safetensors",
+                "steps": 9,
+                "cfg": 1,
+                "sampler_name": "euler",
+                "scheduler": "simple"
             }
         }
     
@@ -328,10 +333,23 @@ class GameApp:
                         # ComfyUI 설정 로드
                         comfyui_settings = config_data.get("comfyui_settings", {})
                         server_port = comfyui_settings.get("server_port", 8000)
+                        workflow_path = comfyui_settings.get("workflow_path", "workflows/comfyui_zit.json")
                         model_name = comfyui_settings.get("model_name", "Zeniji_mix_ZiT_v1.safetensors")
+                        steps = comfyui_settings.get("steps", 9)
+                        cfg = comfyui_settings.get("cfg", 1.0)
+                        sampler_name = comfyui_settings.get("sampler_name", "euler")
+                        scheduler = comfyui_settings.get("scheduler", "simple")
                         server_address = f"127.0.0.1:{server_port}"
-                        self.comfy_client = ComfyClient(server_address=server_address, model_name=model_name)
-                        logger.info(f"ComfyClient initialized: {server_address}, model: {model_name}")
+                        self.comfy_client = ComfyClient(
+                            server_address=server_address,
+                            workflow_path=workflow_path,
+                            model_name=model_name,
+                            steps=steps,
+                            cfg=cfg,
+                            sampler_name=sampler_name,
+                            scheduler=scheduler
+                        )
+                        logger.info(f"ComfyClient initialized: {server_address}, workflow: {workflow_path}, model: {model_name}, steps: {steps}, cfg: {cfg}, sampler: {sampler_name}, scheduler: {scheduler}")
                     
                     # appearance와 background를 조합해서 이미지 생성
                     appearance = config_data["character"].get("appearance", "")
@@ -581,10 +599,23 @@ class GameApp:
                     saved_config = self.load_config()
                     comfyui_settings = saved_config.get("comfyui_settings", {})
                     server_port = comfyui_settings.get("server_port", 8000)
+                    workflow_path = comfyui_settings.get("workflow_path", "workflows/comfyui_zit.json")
                     model_name = comfyui_settings.get("model_name", "Zeniji_mix_ZiT_v1.safetensors")
+                    steps = comfyui_settings.get("steps", 9)
+                    cfg = comfyui_settings.get("cfg", 1.0)
+                    sampler_name = comfyui_settings.get("sampler_name", "euler")
+                    scheduler = comfyui_settings.get("scheduler", "simple")
                     server_address = f"127.0.0.1:{server_port}"
-                    self.comfy_client = ComfyClient(server_address=server_address, model_name=model_name)
-                    logger.info(f"ComfyClient initialized: {server_address}, model: {model_name}")
+                    self.comfy_client = ComfyClient(
+                        server_address=server_address,
+                        workflow_path=workflow_path,
+                        model_name=model_name,
+                        steps=steps,
+                        cfg=cfg,
+                        sampler_name=sampler_name,
+                        scheduler=scheduler
+                    )
+                    logger.info(f"ComfyClient initialized: {server_address}, workflow: {workflow_path}, model: {model_name}, steps: {steps}, cfg: {cfg}, sampler: {sampler_name}, scheduler: {scheduler}")
                 
                 # 설정에서 appearance와 나이 가져오기
                 saved_config = self.load_config()
@@ -1030,27 +1061,83 @@ class GameApp:
                     # ComfyUI 설정 로드
                     comfyui_settings = saved_config.get("comfyui_settings", {})
                     comfyui_port = comfyui_settings.get("server_port", 8000)
+                    workflow_path = comfyui_settings.get("workflow_path", "workflows/comfyui_zit.json")
                     comfyui_model = comfyui_settings.get("model_name", "Zeniji_mix_ZiT_v1.safetensors")
+                    comfyui_steps = comfyui_settings.get("steps", 9)
+                    comfyui_cfg = comfyui_settings.get("cfg", 1)
+                    comfyui_sampler = comfyui_settings.get("sampler_name", "euler")
+                    comfyui_scheduler = comfyui_settings.get("scheduler", "simple")
                     
-                    comfyui_port_input = gr.Number(
-                        label="ComfyUI 서버 포트",
-                        value=comfyui_port,
-                        minimum=1,
-                        maximum=65535,
-                        step=1,
-                        info="ComfyUI 서버가 실행 중인 포트 번호 (기본값: 8000)"
-                    )
-                    comfyui_model_input = gr.Textbox(
-                        label="ComfyUI 모델 이름",
-                        value=comfyui_model,
-                        placeholder="예: Zeniji_mix_ZiT_v1.safetensors",
-                        info="ComfyUI에서 사용할 모델 파일 이름 (확장자 포함)"
-                    )
+                    # workflows 폴더의 .json 파일 목록 가져오기
+                    workflows_dir = Path("workflows")
+                    workflow_files = []
+                    if workflows_dir.exists():
+                        workflow_files = sorted([f.name for f in workflows_dir.glob("*.json")])
+                    
+                    if not workflow_files:
+                        workflow_files = ["comfyui_zit.json"]  # 기본값
+                    
+                    # 현재 선택된 워크플로우 파일명 추출
+                    current_workflow = Path(workflow_path).name if workflow_path else workflow_files[0]
+                    if current_workflow not in workflow_files:
+                        current_workflow = workflow_files[0]
+                    
+                    with gr.Row():
+                        with gr.Column():
+                            comfyui_port_input = gr.Number(
+                                label="ComfyUI 서버 포트",
+                                value=comfyui_port,
+                                minimum=1,
+                                maximum=65535,
+                                step=1,
+                                info="ComfyUI 서버가 실행 중인 포트 번호 (기본값: 8000)"
+                            )
+                            comfyui_workflow_input = gr.Dropdown(
+                                label="워크플로우 파일",
+                                value=current_workflow,
+                                choices=workflow_files,
+                                info="workflows 폴더에서 사용할 워크플로우 파일 선택"
+                            )
+                            comfyui_model_input = gr.Textbox(
+                                label="ComfyUI 모델 이름",
+                                value=comfyui_model,
+                                placeholder="예: Zeniji_mix_ZiT_v1.safetensors",
+                                info="ComfyUI에서 사용할 모델 파일 이름 (확장자 포함)"
+                            )
+                        with gr.Column():
+                            comfyui_steps_input = gr.Number(
+                                label="Steps (생성 단계 수)",
+                                value=comfyui_steps,
+                                minimum=1,
+                                maximum=100,
+                                step=1,
+                                info="이미지 생성 단계 수 (기본값: 9)"
+                            )
+                            comfyui_cfg_input = gr.Number(
+                                label="CFG Scale (프롬프트 강도)",
+                                value=comfyui_cfg,
+                                minimum=0.1,
+                                maximum=20.0,
+                                step=0.1,
+                                info="프롬프트 준수도 (기본값: 1)"
+                            )
+                            comfyui_sampler_input = gr.Dropdown(
+                                label="Sampler (샘플러)",
+                                value=comfyui_sampler,
+                                choices=["euler", "euler_ancestral", "heun", "dpm_2", "dpm_2_ancestral", "lms", "dpm_fast", "dpm_adaptive", "dpmpp_2s_ancestral", "dpmpp_sde", "dpmpp_2m", "dpmpp_2m_sde", "ddim", "uni_pc", "uni_pc_bh2"],
+                                info="이미지 생성 샘플러 (기본값: euler)"
+                            )
+                            comfyui_scheduler_input = gr.Dropdown(
+                                label="Scheduler (스케줄러)",
+                                value=comfyui_scheduler,
+                                choices=["simple", "normal", "karras", "exponential", "sgm_uniform", "simple_karras", "normal_karras"],
+                                info="스케줄러 타입 (기본값: simple)"
+                            )
                     
                     comfyui_status = gr.Markdown("")
                     save_comfyui_btn = gr.Button("💾 ComfyUI 설정 저장", variant="primary")
                     
-                    def save_comfyui_settings(port_val, model_val):
+                    def save_comfyui_settings(port_val, workflow_val, model_val, steps_val, cfg_val, sampler_val, scheduler_val):
                         """ComfyUI 설정 저장"""
                         try:
                             config_data = self.load_config()
@@ -1059,8 +1146,15 @@ class GameApp:
                             if "comfyui_settings" not in config_data:
                                 config_data["comfyui_settings"] = {}
                             
+                            workflow_path = f"workflows/{workflow_val}" if workflow_val else "workflows/comfyui_zit.json"
+                            
                             config_data["comfyui_settings"]["server_port"] = int(port_val) if port_val else 8000
+                            config_data["comfyui_settings"]["workflow_path"] = workflow_path
                             config_data["comfyui_settings"]["model_name"] = model_val or "Zeniji_mix_ZiT_v1.safetensors"
+                            config_data["comfyui_settings"]["steps"] = int(steps_val) if steps_val else 9
+                            config_data["comfyui_settings"]["cfg"] = float(cfg_val) if cfg_val else 1.0
+                            config_data["comfyui_settings"]["sampler_name"] = sampler_val or "euler"
+                            config_data["comfyui_settings"]["scheduler"] = scheduler_val or "simple"
                             
                             # 설정 저장
                             if self.save_config(config_data):
@@ -1068,9 +1162,22 @@ class GameApp:
                                 try:
                                     if self.comfy_client is not None:
                                         server_address = f"127.0.0.1:{config_data['comfyui_settings']['server_port']}"
+                                        workflow_path = config_data['comfyui_settings'].get('workflow_path', 'workflows/comfyui_zit.json')
                                         model_name = config_data['comfyui_settings']['model_name']
-                                        self.comfy_client = ComfyClient(server_address=server_address, model_name=model_name)
-                                        logger.info(f"ComfyClient 재초기화 완료: {server_address}, model: {model_name}")
+                                        steps = config_data['comfyui_settings'].get('steps', 9)
+                                        cfg = config_data['comfyui_settings'].get('cfg', 1.0)
+                                        sampler_name = config_data['comfyui_settings'].get('sampler_name', 'euler')
+                                        scheduler = config_data['comfyui_settings'].get('scheduler', 'simple')
+                                        self.comfy_client = ComfyClient(
+                                            server_address=server_address,
+                                            workflow_path=workflow_path,
+                                            model_name=model_name,
+                                            steps=steps,
+                                            cfg=cfg,
+                                            sampler_name=sampler_name,
+                                            scheduler=scheduler
+                                        )
+                                        logger.info(f"ComfyClient 재초기화 완료: {server_address}, workflow: {workflow_path}, model: {model_name}, steps: {steps}, cfg: {cfg}, sampler: {sampler_name}, scheduler: {scheduler}")
                                     return "✅ ComfyUI 설정 저장 완료! (다음 이미지 생성 시 적용됩니다)"
                                 except Exception as e:
                                     logger.error(f"Failed to reinitialize ComfyClient: {e}")
@@ -1083,7 +1190,7 @@ class GameApp:
                     
                     save_comfyui_btn.click(
                         save_comfyui_settings,
-                        inputs=[comfyui_port_input, comfyui_model_input],
+                        inputs=[comfyui_port_input, comfyui_workflow_input, comfyui_model_input, comfyui_steps_input, comfyui_cfg_input, comfyui_sampler_input, comfyui_scheduler_input],
                         outputs=[comfyui_status]
                     )
             
