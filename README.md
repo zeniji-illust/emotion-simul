@@ -72,7 +72,7 @@ OpenRouter 크레딧 결제 및 유료 모델 사용을 권장합니다. (토큰
 
 로컬 LLM(Ollama) 직접 구동 시: VRAM 16GB / RAM 32GB 이상 권장.
 
-With OpenRouter API, ZEMS runs smoothly on most PCs. For local LLM (Ollama), 16GB+ VRAM and 32GB+ RAM are recommended. 
+With OpenRouter API, ZEMS runs smoothly on most PCs. We highly recommend using paid models via OpenRouter credits; it's cost-effective due to low token consumption. For local LLM (Ollama), 16GB+ VRAM and 32GB+ RAM are recommended
 
 . 
 
