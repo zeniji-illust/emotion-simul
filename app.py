@@ -9,7 +9,7 @@ import argparse
 import json
 import os
 from pathlib import Path
-from typing import Tuple, Optional, Dict
+from typing import Tuple, Optional, Dict, Any
 from brain import Brain
 from state_manager import CharacterState
 from comfy_client import ComfyClient
@@ -17,6 +17,9 @@ from memory_manager import MemoryManager
 from PIL import Image
 import io
 import config
+import plotly.graph_objects as go
+from cryptography.fernet import Fernet
+import base64
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("App")
@@ -28,6 +31,7 @@ ENV_CONFIG_DIR = Path("env_config")
 ENV_CONFIG_FILE = ENV_CONFIG_DIR / "settings.json"
 API_KEY_DIR = Path("apikey")
 OPENROUTER_API_KEY_FILE = API_KEY_DIR / "openrouter_api_key.txt"
+SCENARIOS_DIR = Path("scenarios")
 
 # 프리셋 정의
 PRESETS = {
@@ -57,6 +61,7 @@ class GameApp:
         self.brain = None
         self.model_loaded = False
         self.current_image: Optional[Image.Image] = None  # PIL Image 저장
+        self.current_chart: Optional[go.Figure] = None  # 이전 차트 저장 (로딩 중 유지용)
         self.comfy_client = None
     
     def load_config(self) -> Dict:
@@ -99,29 +104,146 @@ class GameApp:
         
         return result
     
-    def _load_openrouter_api_key(self) -> str:
-        """OpenRouter API 키를 파일에서 불러오기"""
+    def _get_encryption_key(self) -> bytes:
+        """암호화 키 가져오기 또는 생성"""
+        key_file = Path.home() / ".zeniji_encryption_key"
+        
+        if key_file.exists():
+            # 기존 키 로드
+            try:
+                with open(key_file, 'rb') as f:
+                    return f.read()
+            except Exception as e:
+                logger.warning(f"Failed to load encryption key: {e}, generating new key")
+                # 키 로드 실패 시 새로 생성
+                key = Fernet.generate_key()
+                try:
+                    key_file.parent.mkdir(exist_ok=True)
+                    with open(key_file, 'wb') as f:
+                        f.write(key)
+                    # Windows에서는 chmod가 작동하지 않을 수 있음
+                    try:
+                        os.chmod(key_file, 0o600)
+                    except:
+                        pass
+                    return key
+                except Exception as e2:
+                    logger.error(f"Failed to save encryption key: {e2}")
+                    raise
+        else:
+            # 새 키 생성
+            key = Fernet.generate_key()
+            try:
+                key_file.parent.mkdir(exist_ok=True)
+                with open(key_file, 'wb') as f:
+                    f.write(key)
+                # Windows에서는 chmod가 작동하지 않을 수 있음
+                try:
+                    os.chmod(key_file, 0o600)
+                except:
+                    pass
+                logger.info(f"Encryption key generated at {key_file}")
+                return key
+            except Exception as e:
+                logger.error(f"Failed to create encryption key: {e}")
+                raise
+    
+    def _encrypt_api_key(self, api_key: str) -> str:
+        """API 키 암호화"""
         try:
+            key = self._get_encryption_key()
+            fernet = Fernet(key)
+            encrypted = fernet.encrypt(api_key.encode())
+            return base64.b64encode(encrypted).decode()
+        except Exception as e:
+            logger.error(f"Failed to encrypt API key: {e}")
+            raise
+    
+    def _decrypt_api_key(self, encrypted_key: str) -> str:
+        """API 키 복호화"""
+        try:
+            key = self._get_encryption_key()
+            fernet = Fernet(key)
+            encrypted = base64.b64decode(encrypted_key.encode())
+            return fernet.decrypt(encrypted).decode()
+        except Exception as e:
+            logger.error(f"Failed to decrypt API key: {e}")
+            raise
+    
+    def _is_encrypted(self, content: str) -> bool:
+        """파일 내용이 암호화되어 있는지 확인"""
+        # 암호화된 내용은 base64로 인코딩되어 있고, 특정 패턴을 가짐
+        try:
+            # base64 디코딩 시도
+            decoded = base64.b64decode(content.encode())
+            # Fernet 암호화된 데이터는 항상 32바이트 키 + 특정 구조를 가짐
+            return len(decoded) > 0 and len(content) > 50
+        except:
+            return False
+    
+    def _migrate_plaintext_key(self) -> bool:
+        """기존 평문 API 키를 암호화하여 마이그레이션"""
+        try:
+            if not OPENROUTER_API_KEY_FILE.exists():
+                return False
+            
+            # 파일 읽기
+            with open(OPENROUTER_API_KEY_FILE, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+            
+            if not content:
+                return False
+            
+            # 이미 암호화되어 있으면 마이그레이션 불필요
+            if self._is_encrypted(content):
+                return False
+            
+            # 평문 키를 암호화하여 저장
+            encrypted = self._encrypt_api_key(content)
+            with open(OPENROUTER_API_KEY_FILE, 'w', encoding='utf-8') as f:
+                f.write(encrypted)
+            
+            logger.info("Migrated plaintext API key to encrypted format")
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to migrate plaintext API key: {e}")
+            return False
+    
+    def _load_openrouter_api_key(self) -> str:
+        """OpenRouter API 키를 파일에서 복호화하여 불러오기"""
+        try:
+            # 마이그레이션 시도 (기존 평문 파일이 있으면 암호화)
+            self._migrate_plaintext_key()
+            
             if OPENROUTER_API_KEY_FILE.exists():
                 with open(OPENROUTER_API_KEY_FILE, 'r', encoding='utf-8') as f:
-                    api_key = f.read().strip()
-                    return api_key if api_key else ""
+                    encrypted = f.read().strip()
+                    if encrypted:
+                        # 암호화되어 있으면 복호화, 아니면 그대로 반환 (하위 호환성)
+                        if self._is_encrypted(encrypted):
+                            return self._decrypt_api_key(encrypted)
+                        else:
+                            # 평문이면 자동으로 암호화하여 저장
+                            logger.warning("Found plaintext API key, encrypting...")
+                            self._save_openrouter_api_key(encrypted)
+                            return encrypted
             return ""
         except Exception as e:
             logger.warning(f"Failed to load OpenRouter API key: {e}")
             return ""
     
     def _save_openrouter_api_key(self, api_key: str) -> bool:
-        """OpenRouter API 키를 파일에 저장"""
+        """OpenRouter API 키를 암호화하여 파일에 저장"""
         try:
             # apikey 디렉토리가 없으면 생성
             API_KEY_DIR.mkdir(exist_ok=True)
             
-            # API 키 저장
+            # API 키 암호화하여 저장
+            encrypted = self._encrypt_api_key(api_key.strip())
             with open(OPENROUTER_API_KEY_FILE, 'w', encoding='utf-8') as f:
-                f.write(api_key.strip())
+                f.write(encrypted)
             
-            logger.info(f"OpenRouter API key saved to {OPENROUTER_API_KEY_FILE}")
+            logger.info(f"OpenRouter API key saved (encrypted) to {OPENROUTER_API_KEY_FILE}")
             return True
         except Exception as e:
             logger.error(f"Failed to save OpenRouter API key: {e}")
@@ -270,6 +392,98 @@ class GameApp:
             logger.error(f"Failed to load character config: {e}")
             return self._default_config()
     
+    def get_scenario_files(self) -> list:
+        """scenarios 폴더의 JSON 파일 목록 가져오기"""
+        try:
+            SCENARIOS_DIR.mkdir(exist_ok=True)
+            files = sorted([f.stem for f in SCENARIOS_DIR.glob("*.json")])
+            return files
+        except Exception as e:
+            logger.error(f"Failed to get scenario files: {e}")
+            return []
+    
+    def save_scenario(self, scenario_data: dict, scenario_name: str) -> bool:
+        """시나리오 데이터를 파일로 저장 (JSON 형식) - 대화 + 상태 정보 포함"""
+        try:
+            SCENARIOS_DIR.mkdir(exist_ok=True)
+            
+            # 파일명에 .json이 없으면 추가
+            if not scenario_name.endswith('.json'):
+                scenario_name = f"{scenario_name}.json"
+            
+            file_path = SCENARIOS_DIR / scenario_name
+            
+            # conversation 필터링 (빈 content 제거)
+            if "conversation" in scenario_data:
+                filtered_conversation = []
+                for item in scenario_data["conversation"]:
+                    content = item.get("content", "")
+                    # content가 문자열인지 확인
+                    if isinstance(content, str) and content.strip():
+                        filtered_conversation.append(item)
+                    elif isinstance(content, list):
+                        # 리스트인 경우 텍스트 추출
+                        text_parts = [part.get('text', '') if isinstance(part, dict) else str(part) for part in content]
+                        text = ''.join(text_parts).strip()
+                        if text:
+                            item["content"] = text
+                            filtered_conversation.append(item)
+                
+                scenario_data["conversation"] = filtered_conversation
+                
+                if not filtered_conversation:
+                    logger.warning("No conversation content to save")
+                    return False
+            
+            logger.info(f"Saving scenario to {file_path}")
+            logger.info(f"  - Conversation: {len(scenario_data.get('conversation', []))} messages")
+            logger.info(f"  - State: {scenario_data.get('state') is not None}")
+            logger.info(f"  - Context: {scenario_data.get('context') is not None}")
+            
+            # JSON 형식으로 저장
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(scenario_data, f, ensure_ascii=False, indent=2)
+            
+            logger.info(f"Scenario saved to {file_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save scenario: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return False
+    
+    def load_scenario(self, scenario_name: str) -> dict:
+        """시나리오 파일을 불러오기 (JSON 형식) - 대화 + 상태 정보 포함"""
+        try:
+            # 파일명에 .json이 없으면 추가
+            if not scenario_name.endswith('.json'):
+                scenario_name = f"{scenario_name}.json"
+            
+            file_path = SCENARIOS_DIR / scenario_name
+            
+            if not file_path.exists():
+                logger.warning(f"Scenario file not found: {file_path}")
+                return {}
+            
+            with open(file_path, 'r', encoding='utf-8') as f:
+                scenario_data = json.load(f)
+            
+            # 하위 호환성: 리스트 형식이면 dict로 변환
+            if isinstance(scenario_data, list):
+                scenario_data = {"conversation": scenario_data}
+            
+            logger.info(f"Scenario loaded from {file_path}")
+            logger.info(f"  - Conversation: {len(scenario_data.get('conversation', []))} messages")
+            logger.info(f"  - State: {scenario_data.get('state') is not None}")
+            logger.info(f"  - Context: {scenario_data.get('context') is not None}")
+            
+            return scenario_data
+        except Exception as e:
+            logger.error(f"Failed to load scenario: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {}
+    
     def apply_preset(self, preset_name: str) -> Tuple[float, float, float, float, float, float, str, str]:
         """프리셋 적용 - 모든 수치가 확실히 숫자가 되도록 보장"""
         preset = PRESETS.get(preset_name, {})
@@ -372,7 +586,6 @@ class GameApp:
                     logger.info("환경설정에 따라 OpenRouter를 사용합니다.")
             else:
                 logger.info("환경설정에 따라 Ollama를 사용합니다.")
-            
             ollama_model = llm_settings.get("ollama_model", "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest")
             openrouter_model = llm_settings.get("openrouter_model", "cognitivecomputations/dolphin-mistral-24b-venice-edition:free")
             
@@ -407,7 +620,7 @@ class GameApp:
         # 첫 대화 자동 생성
         try:
             logger.info("Generating first dialogue automatically...")
-            history, output_text, stats_text, image, choices_text, thought_text, action_text = self.process_turn("대화 시작", [])
+            history, output_text, stats_text, image, choices_text, thought_text, action_text, radar_chart = self.process_turn("대화 시작", [])
             
             # 첫 화면 이미지 생성 (appearance + background)
             initial_image = None
@@ -473,12 +686,12 @@ class GameApp:
             
             status_msg = "✅ 설정 저장 및 첫 대화 생성 완료!"
             # 탭 전환: chat_tab의 id를 사용
-            return (status_msg, gr.Tabs(selected="chat_tab"), history, output_text, stats_text, initial_image, choices_text, thought_text, action_text)
+            return (status_msg, gr.Tabs(selected="chat_tab"), history, output_text, stats_text, initial_image, choices_text, thought_text, action_text, radar_chart)
         except Exception as e:
             logger.error(f"Failed to generate first dialogue: {e}")
             import traceback
             logger.error(traceback.format_exc())
-            return (f"✅ 설정 저장 완료, 하지만 첫 대화 생성 실패: {str(e)}", gr.Tabs(selected="chat_tab"), [], "", "", None, "", "", "")
+            return (f"✅ 설정 저장 완료, 하지만 첫 대화 생성 실패: {str(e)}", gr.Tabs(selected="chat_tab"), [], "", "", None, "", "", "", None)
     
     def load_model(self) -> Tuple[str, bool]:
         """모델 로드 (설정에서 LLM provider 정보 읽어서 초기화)"""
@@ -547,13 +760,67 @@ class GameApp:
             logger.error(traceback.format_exc())
             return f"❌ 모델 로드 실패: {str(e)}", False
     
-    def process_turn(self, user_input: str, history: list) -> Tuple[list, str, str, str, str, str, str]:
+    def create_radar_chart(self, stats: Dict[str, float], deltas: Dict[str, float] = None) -> go.Figure:
+        """6축 수치를 위한 radar chart 생성"""
+        categories = ['P (쾌락)', 'A (각성)', 'D (지배)', 'I (친밀)', 'T (신뢰)', 'Dep (의존)']
+        keys = ['P', 'A', 'D', 'I', 'T', 'Dep']
+        
+        values = [stats.get(key, 0.0) for key in keys]
+        
+        fig = go.Figure()
+        
+        # 메인 값
+        fig.add_trace(go.Scatterpolar(
+            r=values,
+            theta=categories,
+            fill='toself',
+            name='현재 수치',
+            line_color='rgb(32, 201, 151)',
+            fillcolor='rgba(32, 201, 151, 0.3)'
+        ))
+        
+        # Delta가 있으면 표시
+        if deltas:
+            delta_values = [deltas.get(key, 0.0) for key in keys]
+            # Delta를 현재 값에 더한 값으로 표시 (변화량 시각화)
+            delta_display = [values[i] + delta_values[i] for i in range(len(values))]
+            fig.add_trace(go.Scatterpolar(
+                r=delta_display,
+                theta=categories,
+                fill='toself',
+                name='변화 후',
+                line_color='rgb(255, 99, 71)',
+                fillcolor='rgba(255, 99, 71, 0.2)',
+                line_dash='dash'
+            ))
+        
+        fig.update_layout(
+            polar=dict(
+                domain=dict(x=[0.05, 0.95], y=[0.05, 0.95]),  # 차트 본체를 미세하게 축소
+                radialaxis=dict(
+                    visible=True,
+                    range=[0, 100],
+                    tickfont=dict(size=9)
+                ),
+                angularaxis=dict(
+                    tickfont=dict(size=10)
+                )
+            ),
+            showlegend=False,
+            height=320,
+            width=320,  # 세로가 긴 박스라면 가로폭도 명시적으로 지정
+            margin=dict(l=50, r=50, t=40, b=40)  # 좌우 여백을 더 확보
+        )
+        
+        return fig
+    
+    def process_turn(self, user_input: str, history: list) -> Tuple[list, str, str, str, str, str, str, Any]:
         """턴 처리"""
         if not user_input.strip():
-            return history, "", "", None, "", "", ""
+            return history, "", "", None, "", "", "", None
         
         if self.brain is None:
-            return history, "**오류**: Brain이 초기화되지 않았습니다.", "", None, "", "", ""
+            return history, "**오류**: Brain이 초기화되지 않았습니다.", "", None, "", "", "", None
         
         try:
             response = self.brain.generate_response(user_input)
@@ -637,21 +904,41 @@ class GameApp:
         
         reaction_indicators = format_reaction_indicators(gacha_tier)
         
+        # Radar chart 생성 (이전 차트가 있으면 먼저 반환하고, 새 차트 생성 후 업데이트)
+        # 이전 차트를 먼저 반환하여 로딩 중에도 차트가 보이도록 함
+        if self.current_chart is not None:
+            # 이전 차트를 먼저 반환 (임시)
+            radar_chart = self.current_chart
+        else:
+            # 첫 차트 생성 (빠르게 생성)
+            radar_chart = self.create_radar_chart(stats, final_delta)
+        
+        # 새 차트 생성 (백그라운드에서 업데이트될 예정)
+        new_radar_chart = self.create_radar_chart(stats, final_delta)
+        self.current_chart = new_radar_chart  # 다음 번을 위해 저장
+        
+        # 작은 글씨로 6축 수치와 delta 표시 (2열 레이아웃)
         stats_text = f"""
-**반응 정도:** {reaction_indicators} (x{multiplier:.1f})
-
-**6축 수치:**
-- P (쾌락): {stats.get('P', 0):.0f} {format_delta('P')}
-- A (각성): {stats.get('A', 0):.0f} {format_delta('A')}
-- D (지배): {stats.get('D', 0):.0f} {format_delta('D')}
-- I (친밀): {stats.get('I', 0):.0f} {format_delta('I')}
-- T (신뢰): {stats.get('T', 0):.0f} {format_delta('T')}
-- Dep (의존): {stats.get('Dep', 0):.0f} {format_delta('Dep')}
-
-**상태:**
-- 관계: {relationship}
-- 기분: {mood}
-- 뱃지: {', '.join(response.get('badges', [])) or 'None'}
+<div style="font-size: 0.85em; color: #666;">
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+<div>
+<strong>6축 수치:</strong><br>
+P (쾌락): {stats.get('P', 0):.0f} {format_delta('P')}<br>
+A (각성): {stats.get('A', 0):.0f} {format_delta('A')}<br>
+D (지배): {stats.get('D', 0):.0f} {format_delta('D')}<br>
+</div>
+<div>
+<strong>변화량:</strong><br>
+I (친밀): {stats.get('I', 0):.0f} {format_delta('I')}<br>
+T (신뢰): {stats.get('T', 0):.0f} {format_delta('T')}<br>
+Dep (의존): {stats.get('Dep', 0):.0f} {format_delta('Dep')}<br>
+</div>
+</div>
+<br>
+<strong>반응 정도:</strong> {reaction_indicators} (x{multiplier:.1f})<br>
+<strong>관계:</strong> {relationship} | <strong>기분:</strong> {mood}<br>
+<strong>뱃지:</strong> {', '.join(response.get('badges', [])) or 'None'}
+</div>
 """
         
         # 이미지 생성 (visual_change_detected가 true이거나 5턴 이상 지났을 때)
@@ -757,7 +1044,7 @@ class GameApp:
         thought_text = f"💭 **속마음**: {thought}" if thought else ""
         action_text = f"🎭 **행동**: {action_speech}" if action_speech else ""
         
-        return history, output_text, stats_text, image, choices_text, thought_text, action_text
+        return history, output_text, stats_text, image, choices_text, thought_text, action_text, radar_chart
     
     def create_ui(self):
         """Gradio UI 생성"""
@@ -937,6 +1224,19 @@ class GameApp:
                     
                     setup_status = gr.Markdown("")
                     
+                    # 시나리오 불러오기
+                    gr.Markdown("### 📚 대화 이어가기")
+                    with gr.Row():
+                        with gr.Column(scale=2):
+                            scenario_dropdown = gr.Dropdown(
+                                label="시나리오 파일",
+                                choices=self.get_scenario_files(),
+                                value=None,
+                                info="저장된 대화 시나리오 선택"
+                            )
+                        with gr.Column(scale=1):
+                            continue_chat_btn = gr.Button("📖 대화 이어가기", variant="secondary", size="lg")
+                    
                     # Character 파일 관리
                     with gr.Row():
                         with gr.Column(scale=2):
@@ -1038,9 +1338,12 @@ class GameApp:
                             }
                             
                             if self.save_character_config(config_data, clean_filename):
+                                # character_config.json도 덮어쓰기 (다음 실행 시 기본값으로 사용)
+                                self.save_config(config_data)
+                                
                                 # 드롭다운 목록 새로고침
                                 updated_files = self.get_character_files()
-                                return f"✅ {clean_filename} 저장 완료!", gr.Dropdown(choices=updated_files, value=clean_filename.replace('.json', ''))
+                                return f"✅ {clean_filename} 저장 완료! (character_config.json도 업데이트됨)", gr.Dropdown(choices=updated_files, value=clean_filename.replace('.json', ''))
                             else:
                                 return "❌ 저장 실패", gr.Dropdown()
                         except Exception as e:
@@ -1073,12 +1376,171 @@ class GameApp:
                         ],
                         outputs=[setup_status, character_file_dropdown]
                     )
+                    
+                    def continue_chat(selected_scenario):
+                        """시나리오를 불러와서 대화 이어가기"""
+                        if not selected_scenario:
+                            return "⚠️ 시나리오를 선택해주세요.", gr.Tabs(selected=None), [], "", "", None, "", "", "", None
+                        
+                        try:
+                            # 시나리오 불러오기
+                            scenario_data = self.load_scenario(selected_scenario)
+                            
+                            if not scenario_data or "conversation" not in scenario_data:
+                                return f"⚠️ 시나리오 '{selected_scenario}'를 불러올 수 없습니다.", gr.Tabs(selected=None), [], "", "", None, "", "", "", None
+                            
+                            history = scenario_data.get("conversation", [])
+                            if not history:
+                                return f"⚠️ 시나리오 '{selected_scenario}'에 대화 내용이 없습니다.", gr.Tabs(selected=None), [], "", "", None, "", "", "", None
+                            
+                            # 모델이 로드되어 있는지 확인
+                            if not self.model_loaded:
+                                status_msg, success = self.load_model()
+                                if not success:
+                                    return f"❌ 모델 로드 실패: {status_msg}", gr.Tabs(selected=None), [], "", "", None, "", "", "", None
+                            
+                            # 초기 설정 정보 복원 (프롬프트에 필수)
+                            if self.brain is not None and "initial_config" in scenario_data:
+                                self.brain.set_initial_config(scenario_data["initial_config"])
+                                logger.info("Initial config restored")
+                            
+                            # 상태 정보 복원
+                            if self.brain is not None and "state" in scenario_data:
+                                state_data = scenario_data["state"]
+                                state = self.brain.state
+                                
+                                # Stats 복원
+                                if "stats" in state_data:
+                                    stats = state_data["stats"]
+                                    state.P = stats.get("P", state.P)
+                                    state.A = stats.get("A", state.A)
+                                    state.D = stats.get("D", state.D)
+                                    state.I = stats.get("I", state.I)
+                                    state.T = stats.get("T", state.T)
+                                    state.Dep = stats.get("Dep", state.Dep)
+                                
+                                # 관계 상태 복원
+                                if "relationship" in state_data:
+                                    state.relationship_status = state_data["relationship"]
+                                
+                                # 기분은 interpret_mood로 계산되므로 복원 불필요 (stats 복원 후 자동 계산됨)
+                                # mood는 저장만 하고 복원은 하지 않음 (계산된 값이므로)
+                                
+                                # 뱃지 복원
+                                if "badges" in state_data:
+                                    state.badges = set(state_data["badges"])
+                                
+                                # 트라우마 레벨 복원
+                                if "trauma_level" in state_data:
+                                    state.trauma_level = state_data["trauma_level"]
+                                
+                                # 현재 배경 복원
+                                if "current_background" in state_data:
+                                    state.current_background = state_data["current_background"]
+                                
+                                # 총 턴 수 복원
+                                if "total_turns" in state_data:
+                                    state.total_turns = state_data["total_turns"]
+                                
+                                # mood는 interpret_mood로 계산되는 값
+                                from logic_engine import interpret_mood
+                                calculated_mood = interpret_mood(state)
+                                
+                                logger.info(f"State restored: relationship={state.relationship_status}, mood={calculated_mood}, badges={list(state.badges)}, background={state.current_background}, turns={state.total_turns}")
+                            
+                            # 문맥 정보 복원 (최근 턴)
+                            if self.brain is not None and "context" in scenario_data:
+                                context = scenario_data["context"]
+                                if "recent_turns" in context and hasattr(self.brain, 'history'):
+                                    # DialogueHistory에 턴 추가
+                                    for turn_data in context["recent_turns"]:
+                                        from state_manager import DialogueTurn
+                                        turn = DialogueTurn(
+                                            player_input=turn_data.get("player_input", ""),
+                                            character_response=turn_data.get("character_response", ""),
+                                            emotion=turn_data.get("emotion", "neutral"),
+                                            stats_delta=turn_data.get("stats_delta", {})
+                                        )
+                                        self.brain.history.add(turn)
+                                    logger.info(f"Context restored: {len(context.get('recent_turns', []))} recent turns")
+                            
+                            # 히스토리를 chatbot 형식으로 변환 (딕셔너리 형식 사용)
+                            chatbot_history = []
+                            for item in history:
+                                role = item.get("role", "")
+                                content = item.get("content", "")
+                                if role == "user":
+                                    chatbot_history.append({"role": "user", "content": content})
+                                elif role == "assistant":
+                                    chatbot_history.append({"role": "assistant", "content": content})
+                            
+                            # 현재 상태로 차트 생성
+                            if self.brain is not None:
+                                stats = self.brain.state.get_stats_dict()
+                                current_chart = self.create_radar_chart(stats, {})
+                                self.current_chart = current_chart
+                            else:
+                                current_chart = self.current_chart
+                            
+                            # 현재 이미지와 차트는 유지
+                            current_image = self.current_image
+                            
+                            # stats_text 생성
+                            if self.brain is not None:
+                                state = self.brain.state
+                                stats = state.get_stats_dict()
+                                
+                                # mood는 interpret_mood로 계산되는 값
+                                from logic_engine import interpret_mood
+                                calculated_mood = interpret_mood(state)
+                                
+                                stats_text = f"""
+<div style="font-size: 0.85em; color: #666;">
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+<div>
+<strong>6축 수치:</strong><br>
+P (쾌락): {stats.get('P', 0):.0f}<br>
+A (각성): {stats.get('A', 0):.0f}<br>
+D (지배): {stats.get('D', 0):.0f}<br>
+</div>
+<div>
+<strong>변화량:</strong><br>
+I (친밀): {stats.get('I', 0):.0f}<br>
+T (신뢰): {stats.get('T', 0):.0f}<br>
+Dep (의존): {stats.get('Dep', 0):.0f}<br>
+</div>
+</div>
+<br>
+<strong>관계:</strong> {state.relationship_status} | <strong>기분:</strong> {calculated_mood}<br>
+<strong>뱃지:</strong> {', '.join(state.badges) or 'None'}
+</div>
+"""
+                            else:
+                                stats_text = ""
+                            
+                            return (
+                                f"✅ 시나리오 '{selected_scenario}' 불러오기 완료!",
+                                gr.Tabs(selected="chat_tab"),
+                                chatbot_history,
+                                "",
+                                stats_text,
+                                current_image,
+                                "",
+                                "",
+                                "",
+                                current_chart
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to continue chat: {e}")
+                            import traceback
+                            logger.error(traceback.format_exc())
+                            return f"❌ 시나리오 불러오기 실패: {str(e)}", gr.Tabs(selected=None), [], "", "", None, "", "", "", None
                 
                 # ========== 탭 2: 대화 ==========
                 with gr.Tab("💬 대화", id="chat_tab") as chat_tab:
                     with gr.Row():
                         with gr.Column(scale=2):
-                            chatbot = gr.Chatbot(label="대화", height=400)
+                            chatbot = gr.Chatbot(label="대화", height=500)
                             
                             # 속마음: Accordion으로 접기/펼치기 가능하게
                             with gr.Accordion("💭 속마음 보기", open=False, visible=True) as thought_accordion:
@@ -1089,19 +1551,180 @@ class GameApp:
                             submit_btn = gr.Button("전송", variant="primary", interactive=False)
                         
                         with gr.Column(scale=1):
-                            stats_display = gr.Markdown(label="상태")
+                            stats_chart = gr.Plot(label="6축 수치", show_label=True)
+                            stats_display = gr.Markdown(label="상태 상세", show_label=True)
                             image_display = gr.Image(label="캐릭터", height=400)
+                    
+                    # 시나리오 저장 (모든 컴포넌트 아래, 화면 너비 전체 사용)
+                    with gr.Row():
+                        scenario_save_name = gr.Textbox(
+                            label="시나리오 저장",
+                            placeholder="예: my_scenario",
+                            info="현재 대화를 시나리오로 저장",
+                            scale=3
+                        )
+                        save_scenario_btn = gr.Button("💾 시나리오 저장", variant="secondary", scale=1)
+                        scenario_save_status = gr.Markdown("")
                     
                     # 이미지 업데이트 트리거용 hidden state
                     image_update_trigger = gr.State(value=None)
                     
                     def on_submit(message, history):
                         if not self.model_loaded:
-                            return history, "", "", "", "", None  # 마지막은 trigger
-                        new_history, output, stats, image, choices, thought, action = self.process_turn(message, history)
+                            return history, "", "", "", "", None, None  # 마지막 두 개는 trigger와 chart
+                        
+                        # 이전 차트를 먼저 반환 (로딩 중에도 차트가 보이도록)
+                        previous_chart = self.current_chart if self.current_chart is not None else None
+                        
+                        new_history, output, stats, image, choices, thought, action, chart = self.process_turn(message, history)
                         
                         # image가 새로 생성됐으면 trigger에 넣고, 아니면 None
-                        return new_history, "", stats, thought, action, image
+                        # 차트는 이전 차트를 먼저 반환하고, 새 차트는 나중에 업데이트
+                        return new_history, "", stats, thought, action, image, previous_chart if previous_chart else chart
+                    
+                    def update_chart_async(history):
+                        """백그라운드에서 차트 업데이트"""
+                        if not self.model_loaded or not history:
+                            return gr.skip()
+                        
+                        # 마지막 대화에서 stats 추출하여 차트 생성
+                        try:
+                            # history에서 마지막 응답의 stats 가져오기
+                            # 실제로는 process_turn에서 이미 차트를 생성했으므로 current_chart 사용
+                            if self.current_chart is not None:
+                                return self.current_chart
+                        except:
+                            pass
+                        return gr.skip()
+                    
+                    def save_scenario_handler(scenario_name, history):
+                        """시나리오 저장 핸들러 (대화 + 상태 정보 포함)"""
+                        if not scenario_name or not scenario_name.strip():
+                            return "⚠️ 시나리오 이름을 입력해주세요.", gr.Dropdown()
+                        
+                        if not history:
+                            return "⚠️ 저장할 대화가 없습니다.", gr.Dropdown()
+                        
+                        try:
+                            logger.info(f"Saving scenario: {scenario_name}, history length: {len(history) if history else 0}")
+                            
+                            # chatbot history를 process_turn 형식으로 변환
+                            converted_history = []
+                            for item in history:
+                                if isinstance(item, list) and len(item) == 2:
+                                    # Gradio chatbot 형식: [user_msg, assistant_msg]
+                                    user_msg, assistant_msg = item
+                                    if user_msg:
+                                        # content가 리스트인 경우 처리
+                                        if isinstance(user_msg, list):
+                                            # [{'text': '...', 'type': 'text'}] 형식
+                                            text_parts = [part.get('text', '') if isinstance(part, dict) else str(part) for part in user_msg]
+                                            user_msg = ''.join(text_parts)
+                                        converted_history.append({"role": "user", "content": str(user_msg)})
+                                    if assistant_msg:
+                                        # content가 리스트인 경우 처리
+                                        if isinstance(assistant_msg, list):
+                                            text_parts = [part.get('text', '') if isinstance(part, dict) else str(part) for part in assistant_msg]
+                                            assistant_msg = ''.join(text_parts)
+                                        converted_history.append({"role": "assistant", "content": str(assistant_msg)})
+                                elif isinstance(item, dict):
+                                    # 이미 dict 형식인 경우
+                                    content = item.get("content", "")
+                                    # content가 리스트인 경우 처리
+                                    if isinstance(content, list):
+                                        text_parts = [part.get('text', '') if isinstance(part, dict) else str(part) for part in content]
+                                        content = ''.join(text_parts)
+                                        item["content"] = content
+                                    converted_history.append(item)
+                            
+                            logger.info(f"Converted history length: {len(converted_history)}")
+                            
+                            if not converted_history:
+                                return "⚠️ 변환된 대화 내용이 없습니다. 대화를 먼저 시작해주세요.", gr.Dropdown()
+                            
+                            # Brain에서 상태 정보 가져오기
+                            scenario_data = {
+                                "conversation": converted_history
+                            }
+                            
+                            if self.brain is not None:
+                                # 현재 상태 정보
+                                state = self.brain.state
+                                
+                                # mood는 interpret_mood 함수로 계산되는 값
+                                from logic_engine import interpret_mood
+                                calculated_mood = interpret_mood(state)
+                                
+                                scenario_data["state"] = {
+                                    "stats": {
+                                        "P": state.P,
+                                        "A": state.A,
+                                        "D": state.D,
+                                        "I": state.I,
+                                        "T": state.T,
+                                        "Dep": state.Dep
+                                    },
+                                    "relationship": state.relationship_status,
+                                    "mood": calculated_mood,  # 계산된 mood 값 저장
+                                    "badges": list(state.badges) if hasattr(state, 'badges') else [],
+                                    "trauma_level": state.trauma_level if hasattr(state, 'trauma_level') else 0.0,
+                                    "current_background": state.current_background if hasattr(state, 'current_background') else "",
+                                    "total_turns": state.total_turns if hasattr(state, 'total_turns') else 0
+                                }
+                                
+                                # 초기 설정 정보 (프롬프트에 필수)
+                                if hasattr(self.brain, 'initial_config') and self.brain.initial_config:
+                                    scenario_data["initial_config"] = self.brain.initial_config
+                                
+                                # 최근 대화 턴 (문맥 정보)
+                                if hasattr(self.brain, 'history') and self.brain.history:
+                                    recent_turns = []
+                                    for turn in self.brain.history.turns[-5:]:  # 최근 5턴
+                                        if hasattr(turn, 'player_input') and hasattr(turn, 'character_response'):
+                                            recent_turns.append({
+                                                "player_input": turn.player_input,
+                                                "character_response": turn.character_response,
+                                                "emotion": getattr(turn, 'emotion', 'neutral'),
+                                                "stats_delta": getattr(turn, 'stats_delta', {})
+                                            })
+                                    scenario_data["context"] = {
+                                        "recent_turns": recent_turns
+                                    }
+                            
+                            if self.save_scenario(scenario_data, scenario_name.strip()):
+                                # 드롭다운 목록 새로고침
+                                updated_files = self.get_scenario_files()
+                                return f"✅ {scenario_name.strip()}.json 저장 완료!", gr.Dropdown(choices=updated_files, value=scenario_name.strip())
+                            else:
+                                return "❌ 시나리오 저장 실패", gr.Dropdown()
+                        except Exception as e:
+                            logger.error(f"Failed to save scenario: {e}")
+                            import traceback
+                            logger.error(traceback.format_exc())
+                            return f"❌ 시나리오 저장 실패: {str(e)}", gr.Dropdown()
+                    
+                    save_scenario_btn.click(
+                        save_scenario_handler,
+                        inputs=[scenario_save_name, chatbot],
+                        outputs=[scenario_save_status, scenario_dropdown]
+                    )
+                    
+                    # 시나리오 불러오기 버튼 (대화 탭 컴포넌트가 정의된 후에 연결)
+                    continue_chat_btn.click(
+                        continue_chat,
+                        inputs=[scenario_dropdown],
+                        outputs=[
+                            setup_status, tabs,
+                            chatbot, gr.Textbox(visible=False), stats_display, image_display,
+                            gr.Textbox(visible=False), thought_display, action_display, stats_chart
+                        ]
+                    )
+                    
+                    def update_chart_if_needed(new_chart):
+                        """차트가 있으면 업데이트, 없으면 건너뛰기"""
+                        if new_chart is not None:
+                            return new_chart
+                        return gr.skip()
                     
                     def update_image_if_needed(trigger_image):
                         """트리거에 이미지가 있을 때만 반환, 없으면 업데이트 안 함"""
@@ -1109,25 +1732,33 @@ class GameApp:
                             return trigger_image
                         return gr.skip()  # Gradio 6.x: 업데이트 건너뛰기
                     
-                    # 메인 submit - 이미지 제외
+                    # 메인 submit - 이미지와 차트는 비동기로 업데이트
                     submit_btn.click(
                         on_submit,
                         inputs=[user_input, chatbot],
-                        outputs=[chatbot, user_input, stats_display, thought_display, action_display, image_update_trigger]
+                        outputs=[chatbot, user_input, stats_display, thought_display, action_display, image_update_trigger, stats_chart]
                     ).then(
                         update_image_if_needed,
                         inputs=[image_update_trigger],
                         outputs=[image_display]
+                    ).then(
+                        update_chart_async,
+                        inputs=[chatbot],
+                        outputs=[stats_chart]
                     )
                     
                     user_input.submit(
                         on_submit,
                         inputs=[user_input, chatbot],
-                        outputs=[chatbot, user_input, stats_display, thought_display, action_display, image_update_trigger]
+                        outputs=[chatbot, user_input, stats_display, thought_display, action_display, image_update_trigger, stats_chart]
                     ).then(
                         update_image_if_needed,
                         inputs=[image_update_trigger],
                         outputs=[image_display]
+                    ).then(
+                        update_chart_async,
+                        inputs=[chatbot],
+                        outputs=[stats_chart]
                     )
                     
                     # 모델 로드 완료 시 UI 활성화
@@ -1432,7 +2063,7 @@ class GameApp:
                 outputs=[
                     setup_status, tabs,
                     chatbot, gr.Textbox(visible=False), stats_display, image_display,
-                    gr.Textbox(visible=False), thought_display, action_display
+                    gr.Textbox(visible=False), thought_display, action_display, stats_chart
                 ]
             )
             
