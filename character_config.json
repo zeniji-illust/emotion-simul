@@ -1,25 +1,25 @@
 {
   "player": {
-    "name": "조용현",
+    "name": "챈붕이",
     "gender": "남성"
   },
   "character": {
     "name": "설연",
-    "age": 24,
+    "age": 18,
     "gender": "여성",
-    "appearance": "she is korean beauty, gorgeous actress unique face, long sleek hair",
+    "appearance": "she is korean beauty, gorgeous unique actress face, long sleek hair",
     "personality": "도도하고 우아하고 아주 솔직한 그녀"
   },
   "initial_stats": {
     "P": 50.0,
-    "A": 70.0,
+    "A": 50.0,
     "D": 60.0,
-    "I": 20.0,
+    "I": 50.0,
     "T": 50.0,
     "Dep": 0.0
   },
-  "initial_context": "조용현은 소름끼치는 스토커다. 설연은 배우지망생으로  집에 가는 길이다. 조용현이 따라오고 있는 걸 눈치채고 따지려한다.",
-  "initial_background": "dark korean alley",
+  "initial_context": "챈붕이랑 설연은 같은 학교 동창이다. 챈붕이가 일하는 편의점에 설연이 우연히 들어왔다. 어 챈붕이가 여기서 일하고 있었구나. 그냥 오랜만에 봐서 반가운 설연.",
+  "initial_background": "convenient store",
   "llm_settings": {
     "provider": "openrouter",
     "openrouter_model": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"

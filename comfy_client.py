@@ -211,8 +211,8 @@ class ComfyClient:
             # 이미지 정보 대기용 딕셔너리 초기화
             self.pending_images[prompt_id] = {}
             
-            # 이미지 생성 완료 대기 (최대 60초)
-            max_wait = 60
+            # 이미지 생성 완료 대기 (최대 180초)
+            max_wait = 180
             wait_interval = 0.5
             waited = 0
             
