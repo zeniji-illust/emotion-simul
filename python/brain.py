@@ -7,15 +7,15 @@ import json
 import re
 import logging
 from typing import Dict, Optional, Any
-from state_manager import CharacterState, DialogueHistory, DialogueTurn, BADGE_BEHAVIORS, MOOD_BEHAVIORS
-from logic_engine import (
+from .state_manager import CharacterState, DialogueHistory, DialogueTurn
+from . import config
+from .logic_engine import (
     interpret_mood, check_badge_conditions, check_status_transition,
     apply_gacha_to_delta, get_trauma_instruction,
     get_intimacy_level, get_trust_level, get_dependency_level,
     apply_trauma_on_breakup
 )
-from memory_manager import MemoryManager
-import config
+from .memory_manager import MemoryManager
 
 logger = logging.getLogger("Brain")
 
@@ -32,7 +32,7 @@ class Brain:
             api_key=api_key
         )
         self.state = CharacterState()
-        self.history = DialogueHistory(max_turns=5)
+        self.history = DialogueHistory(max_turns=10)
         self.turns_since_image = 0
         # 초기 설정 정보
         self.initial_config: Optional[Dict] = None
@@ -65,8 +65,11 @@ class Brain:
         
         # 3. JSON 파싱 및 검증
         try:
+            logger.debug(f"Starting JSON parsing. LLM response length: {len(llm_response)}")
             data = self._parse_json(llm_response)
+            logger.debug(f"JSON parsing successful. Data keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
             self._validate_response(data)
+            logger.debug("JSON validation successful")
             
             # 파싱 및 검증된 JSON 로그 출력 (dev_mode일 때만)
             if self.dev_mode:
@@ -77,9 +80,11 @@ class Brain:
                 logger.info(json_module.dumps(data, ensure_ascii=False, indent=2))
                 logger.info("=" * 80)
         except Exception as e:
-            logger.error(f"JSON parsing failed: {e}")
             import traceback
-            logger.error(traceback.format_exc())
+            logger.error(f"JSON parsing failed: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"LLM response (first 500 chars): {llm_response[:500]}")
+            logger.error(f"Full traceback:\n{traceback.format_exc()}")
             return self._fallback_response(player_input)
         
         # 4. 가챠 적용
@@ -138,16 +143,28 @@ class Brain:
         
         # 9. 히스토리 추가 (visual_prompt와 background 포함)
         self.state.total_turns += 1
-        turn = DialogueTurn(
-            turn_number=self.state.total_turns,
-            player_input=player_input,
-            character_speech=data.get("speech", ""),
-            character_thought=data.get("thought", ""),
-            emotion=data.get("emotion", "neutral"),
-            visual_prompt=data.get("visual_prompt", ""),
-            background=background
-        )
-        self.history.add(turn)
+        try:
+            logger.debug(f"Creating DialogueTurn. History type: {type(self.history)}, history.turns type: {type(self.history.turns) if hasattr(self.history, 'turns') else 'N/A'}")
+            turn = DialogueTurn(
+                turn_number=self.state.total_turns,
+                player_input=player_input,
+                character_speech=data.get("speech", ""),
+                character_thought=data.get("thought", ""),
+                emotion=data.get("emotion", "neutral"),
+                visual_prompt=data.get("visual_prompt", ""),
+                background=background
+            )
+            logger.debug(f"DialogueTurn created. Adding to history...")
+            self.history.add(turn)
+            logger.debug(f"Turn added successfully. History length: {len(self.history.turns)}")
+        except Exception as e:
+            import traceback
+            logger.error(f"Failed to add turn to history: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"History type: {type(self.history)}")
+            logger.error(f"History.turns type: {type(self.history.turns) if hasattr(self.history, 'turns') else 'N/A'}")
+            logger.error(f"Full traceback:\n{traceback.format_exc()}")
+            # 히스토리 추가 실패해도 계속 진행
         
         # 10. 응답 조립
         response = {
@@ -250,21 +267,30 @@ class Brain:
         # 뱃지 지침
         badge_behavior = ""
         if self.state.badges:
-            active_badge = self.state.badges[-1]  # 가장 최근 뱃지
-            badge_behavior = BADGE_BEHAVIORS.get(active_badge, "")
-            if badge_behavior:
-                logger.debug(f"[BADGE] Active badge: {active_badge}, behavior length: {len(badge_behavior)}")
+            # badges가 set인지 list인지 확인
+            if isinstance(self.state.badges, set):
+                # set인 경우 리스트로 변환하거나 임의의 요소 선택
+                badges_list = list(self.state.badges)
+                active_badge = badges_list[-1] if badges_list else None
             else:
-                logger.warning(f"[BADGE] Badge '{active_badge}' found but no behavior defined in BADGE_BEHAVIORS")
+                # list인 경우
+                active_badge = self.state.badges[-1]  # 가장 최근 뱃지
+            
+            if active_badge:
+                badge_behavior = config.BADGE_BEHAVIORS.get(active_badge, "")
+                if badge_behavior:
+                    logger.debug(f"[BADGE] Active badge: {active_badge}, behavior length: {len(badge_behavior)}")
+                else:
+                    logger.warning(f"[BADGE] Badge '{active_badge}' found but no behavior defined in config.BADGE_BEHAVIORS")
         
         # Mood 지침
         mood_behavior = ""
         current_mood = interpret_mood(self.state)
-        mood_behavior = MOOD_BEHAVIORS.get(current_mood, "")
+        mood_behavior = config.MOOD_BEHAVIORS.get(current_mood, "")
         if mood_behavior:
             logger.debug(f"[MOOD] Current mood: {current_mood}, behavior length: {len(mood_behavior)}")
         else:
-            logger.warning(f"[MOOD] Mood '{current_mood}' found but no behavior defined in MOOD_BEHAVIORS")
+            logger.warning(f"[MOOD] Mood '{current_mood}' found but no behavior defined in config.MOOD_BEHAVIORS")
         
         # 주인공 정보 추출 (초기 설정이 있으면 사용, 없으면 기본값)
         player_name = "선배"  # 기본값

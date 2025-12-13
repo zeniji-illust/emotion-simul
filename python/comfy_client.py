@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from PIL import Image
 import io
-import config
+from . import config
 
 logger = logging.getLogger("ComfyClient")
 

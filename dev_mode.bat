@@ -13,7 +13,7 @@ timeout /t 3 /nobreak >nul
 
 REM Python 앱을 새 창에서 실행 (dev-mode 플래그 포함)
 ECHO [2/2] Python 앱 시작 중 (Dev Mode)...
-start "Zeniji Emotion Simul (Dev Mode)" cmd /k ".venv\Scripts\activate && python app.py --dev-mode"
+start "Zeniji Emotion Simul (Dev Mode)" cmd /k ".venv\Scripts\activate && python -m python.app --dev-mode"
 
 ECHO.
 ECHO ========================================

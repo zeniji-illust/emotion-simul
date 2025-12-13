@@ -1,169 +1,137 @@
 """
-Zeniji Emotion Simul - State Manager
-캐릭터 상태 데이터 정의 및 관리
+Zeniji Emotion Simul - Configuration
+시스템 설정 및 상수 정의
 """
 
-from dataclasses import dataclass, field
-from typing import List, Dict, Optional
-import json
+from pathlib import Path
 
+# 프로젝트 루트 디렉토리 찾기 (python/ 폴더의 상위)
+PROJECT_ROOT = Path(__file__).parent.parent
 
-@dataclass
-class CharacterState:
-    """
-    6축 PAD/ITDep 벡터 + 관계 상태 + 트라우마 + 뱃지
-    """
-    # 6축 감정 벡터 (0-100)
-    P: float = 50.0  # Pleasure (쾌락)
-    A: float = 40.0  # Arousal (각성)
-    D: float = 40.0  # Dominance (지배)
-    I: float = 20.0  # Intimacy (친밀)
-    T: float = 50.0  # Trust (신뢰)
-    Dep: float = 0.0  # Dependency (의존)
-    
-    # 관계 상태
-    relationship_status: str = "Stranger"
-    
-    # 트라우마 (Hidden, UI에 노출 안 함)
-    trauma_level: float = 0.0
-    
-    # 뱃지 목록
-    badges: List[str] = field(default_factory=list)
-    
-    # 턴 수
-    total_turns: int = 0
-    
-    # 현재 배경 (장소/환경)
-    current_background: str = "college library table, evening light"
-    
-    def clamp(self):
-        """모든 수치를 0-100 범위로 제한"""
-        self.P = max(0.0, min(100.0, self.P))
-        self.A = max(0.0, min(100.0, self.A))
-        self.D = max(0.0, min(100.0, self.D))
-        self.I = max(0.0, min(100.0, self.I))
-        self.T = max(0.0, min(100.0, self.T))
-        self.Dep = max(0.0, min(100.0, self.Dep))
-    
-    def apply_delta(self, delta: Dict[str, float], trauma_penalty: bool = True):
-        """
-        델타 적용 (트라우마 페널티 포함)
-        """
-        # 트라우마가 있으면 I, T의 긍정 델타에 페널티 적용
-        if trauma_penalty and self.trauma_level > 0.0:
-            for key in ["I", "T"]:
-                if key in delta and delta[key] > 0:
-                    delta[key] = delta[key] * (1.0 - self.trauma_level)
-        
-        # 델타 적용
-        if "P" in delta:
-            self.P += delta["P"]
-        if "A" in delta:
-            self.A += delta["A"]
-        if "D" in delta:
-            self.D += delta["D"]
-        if "I" in delta:
-            self.I += delta["I"]
-        if "T" in delta:
-            self.T += delta["T"]
-        if "Dep" in delta:
-            self.Dep += delta["Dep"]
-        
-        self.clamp()
-    
-    def add_badge(self, badge_name: str):
-        """뱃지 추가 (중복 방지)"""
-        if badge_name not in self.badges:
-            self.badges.append(badge_name)
-    
-    def get_stats_dict(self) -> Dict[str, float]:
-        """6축 수치를 딕셔너리로 반환"""
-        return {
-            "P": self.P,
-            "A": self.A,
-            "D": self.D,
-            "I": self.I,
-            "T": self.T,
-            "Dep": self.Dep
-        }
-    
-    def to_dict(self) -> Dict:
-        """전체 상태를 딕셔너리로 변환 (UI용)"""
-        return {
-            "stats": self.get_stats_dict(),
-            "relationship_status": self.relationship_status,
-            "badges": self.badges,
-            "total_turns": self.total_turns
-            # trauma_level은 UI에 노출하지 않음
-        }
-    
-    def from_dict(self, data: Dict):
-        """딕셔너리에서 상태 복원"""
-        if "stats" in data:
-            stats = data["stats"]
-            self.P = stats.get("P", 50.0)
-            self.A = stats.get("A", 40.0)
-            self.D = stats.get("D", 40.0)
-            self.I = stats.get("I", 20.0)
-            self.T = stats.get("T", 50.0)
-            self.Dep = stats.get("Dep", 0.0)
-        
-        self.relationship_status = data.get("relationship_status", "Stranger")
-        self.badges = data.get("badges", [])
-        self.total_turns = data.get("total_turns", 0)
-        self.trauma_level = data.get("trauma_level", 0.0)  # 저장은 하지만 UI에 안 보임
-        self.current_background = data.get("current_background", "college library table, evening light")
-        self.clamp()
+# 이미지 생성 모드
+IMAGE_MODE_ENABLED = True
+DEFAULT_IMAGE_PATH = PROJECT_ROOT / "assets" / "default_character.png"
 
+# 설정 파일 경로 (프로젝트 루트 기준)
+CONFIG_FILE = PROJECT_ROOT / "character_config.json"  # 기본 설정 파일 (하위 호환성)
+CHARACTER_DIR = PROJECT_ROOT / "characters"
+ENV_CONFIG_DIR = PROJECT_ROOT / "env_config"
+ENV_CONFIG_FILE = ENV_CONFIG_DIR / "settings.json"
+API_KEY_DIR = PROJECT_ROOT / "apikey"
+OPENROUTER_API_KEY_FILE = API_KEY_DIR / "openrouter_api_key.txt"
+SCENARIOS_DIR = PROJECT_ROOT / "scenarios"
 
-@dataclass
-class DialogueTurn:
-    """한 턴의 대화 기록"""
-    turn_number: int
-    player_input: str
-    character_speech: str
-    character_thought: str
-    emotion: str
-    visual_prompt: str = ""
-    background: str = ""
+# 프리셋 정의
+PRESETS = {
+    "소꿉친구": {
+        "P": 60.0, "A": 50.0, "D": 45.0, "I": 70.0, "T": 70.0, "Dep": 30.0,
+        "appearance": "korean beauty, friendly face, warm expression, casual clothes, childhood friend",
+        "personality": "밝고 활발하며, 오랜 친구라서 편하게 대화함. 때로는 장난스럽지만 진심이 담겨있음."
+    },
+    "혐관 라이벌": {
+        "P": 20.0, "A": 70.0, "D": 80.0, "I": 10.0, "T": 10.0, "Dep": 0.0,
+        "appearance": "korean beauty, sharp eyes, confident expression, competitive look, strong presence",
+        "personality": "항상 경쟁하고 싶어하며, 당신을 라이벌로 인식. 도전적이고 자존심이 강함."
+    },
+    "피폐/집착": {
+        "P": 30.0, "A": 80.0, "D": 20.0, "I": 90.0, "T": 20.0, "Dep": 90.0,
+        "appearance": "korean beauty, tired eyes, intense gaze, unstable expression, obsessive look",
+        "personality": "당신에게 강하게 집착하며, 떨어지면 불안해함. 감정 기복이 심하고 의존적."
+    }
+}
 
+# 관계 상태 전환 조건 테이블
+STATUS_TRANSITIONS = {
+    "Stranger": {
+        "to": ["Acquaintance"],
+        "condition": {"I": 40}
+    },
+    "Acquaintance": {
+        "to": ["Tempted", "Girlfriend"],
+        "condition": {"I": 60}
+    },
+    "Tempted": {
+        "to": ["Girlfriend", "Master", "Slave"],
+        "condition": {"P": 80, "A": 80, "D": 40}
+    },
+    "Girlfriend": {
+        "to": ["Fiancée", "Wife", "Breakup", "Master", "Slave"],
+        "condition": {"I": 80, "T": 60}
+    },
+    "Fiancée": {
+        "to": ["Wife", "Divorce"],
+        "condition": {"I": 90, "T": 85}
+    },
+    "Wife": {
+        "to": ["Divorce", "Master", "Slave"],
+        "condition": {}
+    },
+    "Master": {
+        "to": ["Slave", "Breakup"],
+        "condition": {"D": 95, "Dep": 90}
+    },
+    "Slave": {
+        "to": ["Breakup"],
+        "condition": {"D": 5, "Dep": 100}
+    },
+    "Breakup": {
+        "to": ["Stranger", "Acquaintance"],
+        "condition": {"I": 30, "T": 30}
+    },
+    "Divorce": {
+        "to": ["Stranger", "Acquaintance"],
+        "condition": {"I": 30, "T": 30}
+    }
+}
 
-class DialogueHistory:
-    """대화 히스토리 관리 (최근 5턴)"""
-    
-    def __init__(self, max_turns: int = 5):
-        self.max_turns = max_turns
-        self.turns: List[DialogueTurn] = []
-    
-    def add(self, turn: DialogueTurn):
-        """턴 추가"""
-        self.turns.append(turn)
-        if len(self.turns) > self.max_turns:
-            self.turns.pop(0)
-    
-    def format_for_prompt(self) -> str:
-        """프롬프트용 히스토리 포맷팅"""
-        if not self.turns:
-            return "(첫 대화입니다)"
-        
-        lines = []
-        for turn in self.turns:
-            lines.append(f"[턴 {turn.turn_number}]")
-            lines.append(f"플레이어: {turn.player_input}")
-            lines.append(f"캐릭터 (대사): {turn.character_speech}")
-            lines.append(f"캐릭터 (속마음): {turn.character_thought}")
-            if turn.visual_prompt:
-                lines.append(f"시각적 묘사: {turn.visual_prompt}")
-            if turn.background:
-                lines.append(f"배경: {turn.background}")
-            lines.append("")
-        
-        return "\n".join(lines)
-    
-    def get_recent_turns(self, n: int = 3) -> List[DialogueTurn]:
-        """최근 N턴 반환"""
-        return self.turns[-n:] if len(self.turns) >= n else self.turns
+# 가챠 시스템 설정
+GACHA_TIERS = {
+    "jackpot": {"prob": 0.01, "multiplier": 5.0},  # 1.0%
+    "surprise": {"prob": 0.04, "multiplier": 2.5},  # 4.0%
+    "critical": {"prob": 0.15, "multiplier": 1.5},  # 15.0%
+    "normal": {"prob": 0.8, "multiplier": 1.0}     # 80.0%
+}
 
+# 이미지 생성 트리거 설정
+IMAGE_GENERATION_TRIGGERS = {
+    "force_refresh_turns": 5,  # N턴마다 강제 갱신
+    "critical_gacha_tiers": ["jackpot", "surprise"],
+    "status_transitions": ["Girlfriend", "Wife", "Master", "Slave"]
+}
+
+# LLM Provider 설정
+LLM_PROVIDER = "ollama"  # "ollama" 또는 "openrouter"
+
+# Ollama API 설정
+OLLAMA_API_URL = "http://localhost:11434"
+OLLAMA_MODEL_NAME = "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest" 
+
+# OpenRouter API 설정
+OPENROUTER_API_KEY = ""  # 환경설정에서 설정
+OPENROUTER_MODEL = "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"  # 기본 모델
+
+# LLM 설정 (Ollama/OpenRouter 호환)
+LLM_CONFIG = {
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "max_tokens": 600
+}
+
+# ComfyUI 설정
+COMFYUI_CONFIG = {
+    "server_address": "127.0.0.1:8000",
+    "workflow_path": str(PROJECT_ROOT / "workflows" / "comfyui_zit.json"),
+    "model_name": "Zeniji_mix_ZiT_v1.safetensors"  # 기본 모델 이름
+}
+
+# Trauma 레벨 분류
+TRAUMA_LEVELS = {
+    0.0: "Clean Slate",
+    0.25: "Scarred",
+    0.50: "Wary",
+    0.75: "Fearful",
+    1.0: "Broken"
+}
 
 # 뱃지별 행동 지침 사전
 BADGE_BEHAVIORS = {
@@ -298,3 +266,4 @@ MOOD_BEHAVIORS = {
         "플레이어와의 관계에서 편안함을 느끼며, 특별한 감정 없이 일상적인 대화를 이어갑니다."
     )
 }
+

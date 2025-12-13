@@ -8,7 +8,7 @@ import time
 import requests
 from typing import Optional, Tuple
 
-import config
+from . import config
 
 logger = logging.getLogger("MemoryManager")
 

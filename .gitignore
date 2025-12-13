@@ -31,6 +31,7 @@ models/
 apikey/
 env_config/
 characters/
+scenarios/
 
 # OS
 .DS_Store

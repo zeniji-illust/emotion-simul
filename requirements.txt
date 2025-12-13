@@ -1,12 +1,33 @@
-# 필수 패키지
-gradio>=4.0.0
+# Zeniji Emotion Simul - 필수 패키지
+# Python 3.8+ 필요
+
+# UI 프레임워크
+gradio>=4.0.0,<5.0.0
+
+# FastAPI 및 Pydantic (Gradio 의존성, Python 3.11 호환)
+fastapi>=0.104.0
+pydantic>=2.0.0,<3.0.0
+pydantic-core>=2.0.0
+
+# HTTP 요청
 requests>=2.31.0
+
+# WebSocket 클라이언트 (ComfyUI 통신)
 websocket-client>=1.6.0
+
+# 데이터 시각화 (레이더 차트)
 plotly>=5.0.0
+
+# 암호화 (API 키 보호)
 cryptography>=41.0.0
 
-# 선택적 패키지 (이미지 생성에 필요할 수 있음)
-# torch>=2.0.0
-# transformers>=4.35.0
-# bitsandbytes>=0.41.0
-# accelerate>=0.24.0
+# 이미지 처리
+Pillow>=10.0.0
+
+# 참고: 선택적 패키지
+# 로컬 LLM 실행을 위해서는 추가 패키지가 필요할 수 있습니다:
+# - torch>=2.0.0
+# - transformers>=4.35.0
+# - bitsandbytes>=0.41.0
+# - accelerate>=0.24.0
+# 하지만 이 프로젝트는 Ollama나 OpenRouter API를 사용하므로 필수는 아닙니다.

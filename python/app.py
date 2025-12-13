@@ -1,0 +1,583 @@
+"""
+Zeniji Emotion Simul - Main Application
+Gradio UI 및 게임 루프
+"""
+
+import gradio as gr
+import logging
+import argparse
+import json
+from pathlib import Path
+from typing import Tuple, Optional, Dict, Any
+from .brain import Brain
+from .state_manager import CharacterState
+from .comfy_client import ComfyClient
+from .memory_manager import MemoryManager
+from PIL import Image
+import io
+from . import config
+import plotly.graph_objects as go
+from .encryption import EncryptionManager
+from .config_manager import ConfigManager
+from .ui_components import UIComponents
+from .game_initializer import GameInitializer
+from .ui_builder import UIBuilder
+
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger("App")
+
+
+class GameApp:
+    """게임 애플리케이션"""
+    
+    def __init__(self, dev_mode: bool = False):
+        self.dev_mode = dev_mode
+        self.brain = None
+        self.model_loaded = False
+        self.current_image: Optional[Image.Image] = None  # PIL Image 저장
+        self.current_chart: Optional[go.Figure] = None  # 이전 차트 저장 (로딩 중 유지용)
+        self.comfy_client = None
+        self.previous_relationship: Optional[str] = None  # 이전 관계 상태 (모달용)
+        self.last_image_generation_info: Optional[Dict[str, str]] = None  # 마지막 이미지 생성 정보 (visual_prompt, appearance)
+        
+        # 분리된 모듈 초기화
+        self.encryption_manager = EncryptionManager()
+        self.config_manager = ConfigManager()
+        self.ui_components = UIComponents()
+    
+    # 설정 관리 메서드 (config_manager 위임)
+    def load_config(self) -> Dict:
+        """설정 파일 로드 - None 값 정리"""
+        return self.config_manager.load_config()
+    
+    def save_config(self, config_data: Dict) -> bool:
+        """설정 파일 저장 (하위 호환성용)"""
+        return self.config_manager.save_config(config_data)
+    
+    def load_env_config(self) -> Dict:
+        """환경설정 파일 로드 (LLM 및 ComfyUI 설정)"""
+        return self.config_manager.load_env_config()
+    
+    def save_env_config(self, env_config: Dict) -> bool:
+        """환경설정 파일 저장"""
+        return self.config_manager.save_env_config(env_config)
+    
+    def get_character_files(self) -> list:
+        """character 폴더의 JSON 파일 목록 가져오기"""
+        return self.config_manager.get_character_files()
+    
+    def save_character_config(self, config_data: Dict, filename: str) -> bool:
+        """character 폴더에 설정 파일 저장"""
+        return self.config_manager.save_character_config(config_data, filename)
+    
+    def load_character_config(self, filename: str) -> Dict:
+        """character 폴더에서 설정 파일 로드"""
+        return self.config_manager.load_character_config(filename)
+    
+    def get_scenario_files(self) -> list:
+        """scenarios 폴더의 JSON 파일 목록 가져오기"""
+        return self.config_manager.get_scenario_files()
+    
+    def save_scenario(self, scenario_data: dict, scenario_name: str) -> bool:
+        """시나리오 데이터를 파일로 저장 (JSON 형식) - 대화 + 상태 정보 포함"""
+        return self.config_manager.save_scenario(scenario_data, scenario_name)
+    
+    def load_scenario(self, scenario_name: str) -> dict:
+        """시나리오 파일을 불러오기 (JSON 형식) - 대화 + 상태 정보 포함"""
+        return self.config_manager.load_scenario(scenario_name)
+    
+    def apply_preset(self, preset_name: str) -> Tuple[float, float, float, float, float, float, str, str]:
+        """프리셋 적용 - 모든 수치가 확실히 숫자가 되도록 보장"""
+        return self.config_manager.apply_preset(preset_name)
+    
+    # 암호화 관련 메서드 (encryption_manager 위임)
+    def _load_openrouter_api_key(self) -> str:
+        """OpenRouter API 키를 파일에서 복호화하여 불러오기"""
+        return self.encryption_manager.load_openrouter_api_key()
+    
+    def _save_openrouter_api_key(self, api_key: str) -> bool:
+        """OpenRouter API 키를 암호화하여 파일에 저장"""
+        return self.encryption_manager.save_openrouter_api_key(api_key)
+    
+
+    # 게임 시작 메서드 (GameInitializer로 위임)
+    def validate_and_start(
+        self,
+        player_name, player_gender,
+        char_name, char_age, char_gender,
+        appearance, personality,
+        p_val, a_val, d_val, i_val, t_val, dep_val,
+        initial_context, initial_background
+    ) -> Tuple[str, str, list, str, str, str, str, str, str]:
+        """설정 검증 및 시작 (첫 대화 자동 생성) - GameInitializer로 위임"""
+        return GameInitializer.validate_and_start(
+            self,
+            player_name, player_gender,
+            char_name, char_age, char_gender,
+            appearance, personality,
+            p_val, a_val, d_val, i_val, t_val, dep_val,
+            initial_context, initial_background
+        )
+    
+    def load_model(self) -> Tuple[str, bool]:
+        """모델 로드 (설정에서 LLM provider 정보 읽어서 초기화)"""
+        if self.model_loaded and self.brain is not None:
+            return "모델이 이미 로드되어 있습니다.", True
+        
+        try:
+            # 설정에서 LLM 설정 읽기
+            env_config = self.load_env_config()
+            llm_settings = env_config.get("llm_settings", {})
+            provider = llm_settings.get("provider", "ollama")
+            ollama_model = llm_settings.get("ollama_model", "kwangsuklee/Qwen2.5-14B-Gutenberg-1e-Delta.Q5_K_M:latest")
+            openrouter_model = llm_settings.get("openrouter_model", "cognitivecomputations/dolphin-mistral-24b-venice-edition:free")
+            # API 키는 파일에서 불러오기
+            openrouter_api_key = self._load_openrouter_api_key()
+            
+            # Brain 초기화 (설정에 따라 MemoryManager도 초기화)
+            if self.brain is None:
+                model_name = ollama_model if provider == "ollama" else openrouter_model
+                api_key = openrouter_api_key if provider == "openrouter" else None
+                self.brain = Brain(
+                    dev_mode=self.dev_mode,
+                    provider=provider,
+                    model_name=model_name,
+                    api_key=api_key
+                )
+            else:
+                # Brain이 이미 있으면 memory_manager만 재초기화
+                model_name = ollama_model if provider == "ollama" else openrouter_model
+                api_key = openrouter_api_key if provider == "openrouter" else None
+                self.brain.memory_manager = MemoryManager(
+                    dev_mode=self.dev_mode,
+                    provider=provider,
+                    model_name=model_name,
+                    api_key=api_key
+                )
+            
+            logger.info(f"Brain initialized with {provider.upper()}, loading model...")
+            
+            # 모델 로드 시도 (OpenRouter 실패 시 Ollama로 폴백)
+            result = self.brain.memory_manager.load_model()
+            if result is None and provider == "openrouter":
+                logger.warning("OpenRouter 연결 실패, Ollama로 폴백 시도...")
+                # Ollama로 폴백
+                self.brain.memory_manager = MemoryManager(
+                    dev_mode=self.dev_mode,
+                    provider="ollama",
+                    model_name=ollama_model
+                )
+                result = self.brain.memory_manager.load_model()
+                if result is None:
+                    return "⚠️ OpenRouter 연결 실패, Ollama로 폴백 시도했으나 Ollama도 연결 실패했습니다.", False
+                self.model_loaded = True
+                logger.info("Model loaded successfully (Ollama fallback)")
+                return "⚠️ OpenRouter 연결 실패, Ollama로 폴백하여 모델 로드 완료!", True
+            
+            if result is None:
+                raise RuntimeError("모델 로드에 실패했습니다.")
+            
+            self.model_loaded = True
+            logger.info("Model loaded successfully")
+            return f"✅ 모델 로드 완료! ({provider.upper()})", True
+        except Exception as e:
+            logger.error(f"Failed to load model: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return f"❌ 모델 로드 실패: {str(e)}", False
+    
+    # UI 컴포넌트 메서드 (ui_components 위임)
+    def create_radar_chart(self, stats: Dict[str, float], deltas: Dict[str, float] = None) -> go.Figure:
+        """6축 수치를 위한 radar chart 생성"""
+        return self.ui_components.create_radar_chart(stats, deltas)
+    
+    def create_event_notification(self, event_type: str, event_data: dict) -> str:
+        """이벤트 알림 HTML 생성 (Gradio 호환)"""
+        return self.ui_components.create_event_notification(event_type, event_data)
+    
+    def process_turn(self, user_input: str, history: list) -> Tuple[list, str, str, str, str, str, str, Any, str]:
+        """턴 처리"""
+        if not user_input.strip():
+            return history, "", "", None, "", "", "", None, ""
+        
+        if self.brain is None:
+            return history, "**오류**: Brain이 초기화되지 않았습니다.", "", None, "", "", "", None, ""
+        
+        try:
+            response = self.brain.generate_response(user_input)
+        except Exception as e:
+            import traceback
+            error_traceback = traceback.format_exc()
+            logger.error(f"Turn processing failed: {e}")
+            logger.error(f"Error traceback:\n{error_traceback}")
+            logger.error(f"History type: {type(history)}, value: {history}")
+            logger.error(f"User input: {user_input}")
+            return history, f"**오류 발생**: {str(e)}\n\n상세 정보는 콘솔 로그를 확인하세요.", "", None, "", "", "", None, ""
+        
+        # 응답 파싱
+        speech = response.get("speech", "")
+        thought = response.get("thought", "")
+        action_speech = response.get("action_speech", "")
+        emotion = response.get("emotion", "neutral")
+        stats = response.get("stats", {})
+        mood = response.get("mood", "Neutral")
+        relationship = response.get("relationship_status", "Stranger")
+        gacha_tier = response.get("gacha_tier", "normal")  # 내부 시스템 용어
+        multiplier = response.get("multiplier", 1.0)
+        final_delta = response.get("final_delta", {})
+        new_badge = response.get("new_badge")
+        
+        # 히스토리 업데이트
+        # Gradio Chatbot은 튜플 형식 [user_msg, assistant_msg]를 사용함
+        # Gradio에서 전달되는 history가 set이나 다른 타입일 수 있으므로 안전하게 처리
+        try:
+            if history is None:
+                history = []
+            elif isinstance(history, set):
+                # set인 경우 리스트로 변환
+                history = list(history)
+            elif not isinstance(history, list):
+                # 다른 타입인 경우 리스트로 변환 시도
+                try:
+                    history = list(history)
+                except (TypeError, ValueError):
+                    logger.warning(f"History type {type(history)} cannot be converted to list, using empty list")
+                    history = []
+            else:
+                # 이미 리스트인 경우 복사본 생성
+                history = list(history)
+            
+            # 튜플 형식으로 추가: [user_message, assistant_message]
+            history.append([user_input, speech])
+        except Exception as e:
+            logger.error(f"Failed to update history: {e}, history type: {type(history)}")
+            # 오류 발생 시 새 리스트로 시작 (튜플 형식)
+            history = [[user_input, speech]]
+        
+        # 출력 텍스트
+        output_lines = [
+            f"**{speech}**",
+            "",
+            f"*속마음: {thought}*",
+            "",
+            f"감정: {emotion} | 기분: {mood} | 관계: {relationship}"
+        ]
+        
+        if gacha_tier != "normal":
+            tier_emoji = {"jackpot": "🎰", "surprise": "✨", "critical": "💥"}.get(gacha_tier, "🎲")
+            # 사용자에게는 "반응 정도"로 표시
+            reaction_level = {"jackpot": "극진한 반응", "surprise": "놀라운 반응", "critical": "강렬한 반응"}.get(gacha_tier, "특별한 반응")
+            output_lines.append(f"{tier_emoji} **{reaction_level}** (배율: x{multiplier:.1f})")
+        
+        if new_badge:
+            output_lines.append(f"🏆 **뱃지 획득: {new_badge}**")
+        
+        delta_parts = []
+        for key, value in final_delta.items():
+            if value != 0:
+                sign = "+" if value > 0 else ""
+                color = "green" if value > 0 else "red"
+                delta_parts.append(f"<span style='color: {color}'>{key}: {sign}{value:.1f}</span>")
+        
+        if delta_parts:
+            output_lines.append(f"변화: {' | '.join(delta_parts)}")
+        
+        output_text = "\n".join(output_lines)
+        
+        def format_delta(key: str) -> str:
+            delta_value = final_delta.get(key, 0)
+            if delta_value > 0:
+                return f'<span style="color: blue;">(+{delta_value:.0f})</span>'
+            elif delta_value < 0:
+                return f'<span style="color: red;">({delta_value:.0f})</span>'
+            else:
+                return '<span style="color: black;">(0)</span>'
+        
+        # 반응 정도 표시 (전구 아이콘)
+        def format_reaction_indicators(tier: str) -> str:
+            """반응 정도에 따라 전구/번개/폭발 아이콘 표시"""
+            if tier == "jackpot":
+                # 폭발 이모티콘 4개
+                return "💥 💥 💥 💥"
+            elif tier == "surprise":
+                # 번개 3개, 꺼진 전구 1개
+                return "⚡ ⚡ ⚡ ⚫"
+            elif tier == "critical":
+                # 노란 전구 2개, 꺼진 전구 2개
+                return "💡 💡 ⚫ ⚫"
+            else:  # normal
+                # 노란 전구 1개, 꺼진 전구 3개
+                return "💡 ⚫ ⚫ ⚫"
+        
+        reaction_indicators = format_reaction_indicators(gacha_tier)
+        
+        # 이벤트 알림 생성 (여러 개 수집 가능)
+        events_to_show = []
+        
+        # 1. 관계 상태 변경 체크
+        relationship_changed = False
+        if self.previous_relationship is not None and self.previous_relationship != relationship:
+            relationship_changed = True
+            logger.info(f"Relationship changed: {self.previous_relationship} -> {relationship}")
+        
+        # 관계 상태가 특정 상태로 변경된 경우
+        if relationship_changed and relationship in ["Girlfriend", "Wife", "Divorce", "Tempted", "slave", "master", "fiancee", "breakup"]:
+            logger.info(f"Creating relationship change notification: {relationship}")
+            events_to_show.append((relationship, {
+                "new_status": relationship,
+                "old_status": self.previous_relationship
+            }))
+        elif relationship_changed:
+            # 관계가 변경되었지만 특정 상태가 아닌 경우에도 로깅
+            logger.debug(f"Relationship changed but not in trigger list: {relationship}")
+        
+        # 2. Badge 이벤트 체크 (뱃지는 중요해서 관계와 겹쳐도 표시)
+        # 단, 이미 획득한 뱃지는 알림 표시하지 않음
+        if new_badge:
+            current_badges = response.get('badges', [])
+            # new_badge가 현재 보유한 뱃지 목록에 없을 때만 알림 표시 (새로 획득한 뱃지)
+            if new_badge not in current_badges:
+                logger.info(f"Creating badge notification for new badge: {new_badge}")
+                events_to_show.append(("badge", {
+                    "badge_name": new_badge
+                }))
+            else:
+                logger.debug(f"Badge {new_badge} already owned, skipping notification")
+        
+        # 3. Gacha tier 이벤트 체크 (다른 이벤트가 없을 때만)
+        if not events_to_show and gacha_tier in ["jackpot", "surprise"]:
+            events_to_show.append((gacha_tier, {
+                "message": f"{'극진한 반응' if gacha_tier == 'jackpot' else '놀라운 반응'}이 발생했습니다! (배율: x{multiplier:.1f})"
+            }))
+        
+        # 여러 알림 생성 (없으면 빈 문자열)
+        event_notification = ""
+        if events_to_show:
+            event_notification = self.ui_components.create_multiple_notifications(events_to_show)
+        
+        # 이전 관계 상태 업데이트 (첫 턴이거나 변경되지 않은 경우에도 업데이트)
+        if self.previous_relationship is None:
+            logger.info(f"Initializing previous_relationship: {relationship}")
+        self.previous_relationship = relationship
+        
+        # Radar chart 생성 (이전 차트가 있으면 먼저 반환하고, 새 차트 생성 후 업데이트)
+        # 이전 차트를 먼저 반환하여 로딩 중에도 차트가 보이도록 함
+        if self.current_chart is not None:
+            # 이전 차트를 먼저 반환 (임시)
+            radar_chart = self.current_chart
+        else:
+            # 첫 차트 생성 (빠르게 생성)
+            radar_chart = self.create_radar_chart(stats, final_delta)
+        
+        # 새 차트 생성 (백그라운드에서 업데이트될 예정)
+        new_radar_chart = self.create_radar_chart(stats, final_delta)
+        self.current_chart = new_radar_chart  # 다음 번을 위해 저장
+        
+        # 작은 글씨로 6축 수치와 delta 표시 (2열 레이아웃)
+        stats_text = f"""
+<div style="font-size: 0.85em; color: #666;">
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+<div>
+<strong>6축 수치:</strong><br>
+P (쾌락): {stats.get('P', 0):.0f} {format_delta('P')}<br>
+A (각성): {stats.get('A', 0):.0f} {format_delta('A')}<br>
+D (지배): {stats.get('D', 0):.0f} {format_delta('D')}<br>
+</div>
+<div>
+<strong>변화량:</strong><br>
+I (친밀): {stats.get('I', 0):.0f} {format_delta('I')}<br>
+T (신뢰): {stats.get('T', 0):.0f} {format_delta('T')}<br>
+Dep (의존): {stats.get('Dep', 0):.0f} {format_delta('Dep')}<br>
+</div>
+</div>
+<br>
+<strong>반응 정도:</strong> {reaction_indicators} (x{multiplier:.1f})<br>
+<strong>관계:</strong> {relationship} | <strong>기분:</strong> {mood}<br>
+<strong>뱃지:</strong> {', '.join(response.get('badges', [])) or 'None'}
+</div>
+"""
+        
+        # 이미지 생성 (visual_change_detected가 true이거나 5턴 이상 지났을 때)
+        image = None
+        visual_change_detected = response.get("visual_change_detected", False)
+        image_generation_reasons = response.get("image_generation_reasons", [])
+        new_image_generated = False  # 새 이미지가 생성되었는지 추적
+        
+        if visual_change_detected and config.IMAGE_MODE_ENABLED:
+            # LLM 모델 offload를 위한 2초 대기
+            import time
+            logger.info("Waiting 2 second for LLM model offload...")
+            time.sleep(2.0)
+            
+            # 이미지 생성 이유 로그 출력
+            if image_generation_reasons:
+                logger.info("=" * 80)
+                logger.info("🎨 [ComfyUI 이미지 생성 시작]")
+                logger.info("=" * 80)
+                logger.info("이미지 생성 이유:")
+                for i, reason in enumerate(image_generation_reasons, 1):
+                    logger.info(f"  {i}. {reason}")
+                logger.info("=" * 80)
+            else:
+                logger.info("🎨 [ComfyUI 이미지 생성 시작] (이유: visual_change_detected=true)")
+            
+            try:
+                # ComfyClient 초기화 (아직 안 되어 있으면)
+                if self.comfy_client is None:
+                    # ComfyUI 설정 로드
+                    env_config = self.load_env_config()
+                    comfyui_settings = env_config.get("comfyui_settings", {})
+                    server_port = comfyui_settings.get("server_port", 8000)
+                    workflow_path = comfyui_settings.get("workflow_path", str(config.PROJECT_ROOT / "workflows" / "comfyui_zit.json"))
+                    model_name = comfyui_settings.get("model_name", "Zeniji_mix_ZiT_v1.safetensors")
+                    steps = comfyui_settings.get("steps", 9)
+                    cfg = comfyui_settings.get("cfg", 1.0)
+                    sampler_name = comfyui_settings.get("sampler_name", "euler")
+                    scheduler = comfyui_settings.get("scheduler", "simple")
+                    server_address = f"127.0.0.1:{server_port}"
+                    self.comfy_client = ComfyClient(
+                        server_address=server_address,
+                        workflow_path=workflow_path,
+                        model_name=model_name,
+                        steps=steps,
+                        cfg=cfg,
+                        sampler_name=sampler_name,
+                        scheduler=scheduler
+                    )
+                    logger.info(f"ComfyClient initialized: {server_address}, workflow: {workflow_path}, model: {model_name}, steps: {steps}, cfg: {cfg}, sampler: {sampler_name}, scheduler: {scheduler}")
+                
+                # 설정에서 appearance와 나이 가져오기
+                saved_config = self.load_config()
+                appearance = saved_config["character"].get("appearance", "")
+                char_age = saved_config["character"].get("age", 21)
+                
+                # appearance에 나이 추가 (이미지 생성용)
+                if appearance and f"{char_age} years old" not in appearance.lower():
+                    appearance = f"{char_age} years old, {appearance}".strip()
+                elif not appearance:
+                    appearance = f"{char_age} years old"
+                
+                # response에서 visual_prompt와 background 가져오기
+                visual_prompt = response.get("visual_prompt", "")
+                background = response.get("background", "")
+                
+                # visual_prompt가 없으면 기본값 사용
+                if not visual_prompt:
+                    visual_prompt = f"background: {background}, expression: {emotion}, looking at viewer"
+                elif background and "background:" not in visual_prompt.lower():
+                    # visual_prompt에 background가 없으면 추가
+                    visual_prompt = f"{visual_prompt}, background: {background}"
+                
+                logger.info(f"  appearance: {appearance[:50]}...")
+                logger.info(f"  visual_prompt: {visual_prompt[:100]}...")
+                
+                image_bytes = self.comfy_client.generate_image(
+                    visual_prompt=visual_prompt,
+                    appearance=appearance,
+                    seed=-1
+                )
+                
+                if image_bytes:
+                    # PIL Image로 변환
+                    image = Image.open(io.BytesIO(image_bytes))
+                    # 현재 이미지로 저장
+                    self.current_image = image
+                    # 마지막 이미지 생성 정보 저장 (재시도용)
+                    self.last_image_generation_info = {
+                        "visual_prompt": visual_prompt,
+                        "appearance": appearance
+                    }
+                    new_image_generated = True  # 새 이미지 생성됨
+                    logger.info("Image generated successfully")
+                else:
+                    logger.warning("Failed to generate image (returned None)")
+            except Exception as e:
+                logger.error(f"Failed to generate image: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                # 이미지 생성 실패해도 대화는 계속 진행
+        
+        # 새 이미지가 생성되지 않았으면 이전 이미지 그대로 반환 (로딩 창 방지)
+        if not new_image_generated:
+            image = self.current_image
+        
+        choices_text = "다음 대사를 입력하세요."
+        thought_text = f"💭 **속마음**: {thought}" if thought else ""
+        action_text = f"🎭 **행동**: {action_speech}" if action_speech else ""
+        
+        return history, output_text, stats_text, image, choices_text, thought_text, action_text, radar_chart, event_notification
+    
+    def retry_image_generation(self) -> Tuple[Optional[Image.Image], str]:
+        """마지막 이미지 생성 정보를 재사용하여 이미지 재생성"""
+        if not self.last_image_generation_info:
+            return None, "⚠️ 재생성할 이미지 정보가 없습니다."
+        
+        if self.comfy_client is None:
+            return None, "⚠️ ComfyUI 클라이언트가 초기화되지 않았습니다."
+        
+        try:
+            visual_prompt = self.last_image_generation_info.get("visual_prompt", "")
+            appearance = self.last_image_generation_info.get("appearance", "")
+            
+            if not visual_prompt:
+                return None, "⚠️ 저장된 visual_prompt가 없습니다."
+            
+            logger.info("🔄 이미지 재생성 시작 (저장된 visual_prompt 재사용)")
+            logger.info(f"  appearance: {appearance[:50] if appearance else 'None'}...")
+            logger.info(f"  visual_prompt: {visual_prompt[:100]}...")
+            
+            # ComfyUI에 이미지 생성 요청 (seed는 랜덤으로)
+            image_bytes = self.comfy_client.generate_image(
+                visual_prompt=visual_prompt,
+                appearance=appearance,
+                seed=-1  # 랜덤 시드
+            )
+            
+            if image_bytes:
+                # PIL Image로 변환
+                image = Image.open(io.BytesIO(image_bytes))
+                # 현재 이미지로 업데이트
+                self.current_image = image
+                logger.info("✅ 이미지 재생성 완료")
+                return image, "✅ 이미지가 재생성되었습니다."
+            else:
+                logger.warning("이미지 재생성 실패 (None 반환)")
+                return None, "❌ 이미지 재생성에 실패했습니다."
+        except Exception as e:
+            logger.error(f"이미지 재생성 중 오류 발생: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None, f"❌ 이미지 재생성 중 오류: {str(e)}"
+    
+    def create_ui(self):
+        """Gradio UI 생성 - UIBuilder로 위임"""
+        return UIBuilder.create_ui(self)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Zeniji Emotion Simul")
+    parser.add_argument("--dev-mode", action="store_true", help="개발자 모드 활성화")
+    parser.add_argument("--log-level", default="INFO", help="로깅 레벨 설정")
+    return parser.parse_args()
+
+
+def main():
+    """메인 실행"""
+    args = parse_args()
+    logging.getLogger().setLevel(getattr(logging, args.log_level.upper(), logging.INFO))
+
+    app = GameApp(dev_mode=args.dev_mode)
+    demo = app.create_ui()
+    print("\n" + "=" * 60)
+    print("🚀 Gradio 서버 시작 중...")
+    print("=" * 60)
+    print(f"📍 로컬 접속: http://localhost:7860")
+    print(f"📍 네트워크 접속: http://127.0.0.1:7860")
+    if args.dev_mode:
+        print("🛠  Dev Mode ON")
+    print("=" * 60 + "\n")
+    demo.launch(server_name="127.0.0.1", server_port=7860, share=False, inbrowser=True)
+
+
+if __name__ == "__main__":
+    main()
