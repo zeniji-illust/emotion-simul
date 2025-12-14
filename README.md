@@ -1,3 +1,9 @@
+
+v.1.1 업데이트: 환경 설정 창에서 vae,  text encoders 선택 가능 / 시작 후 이동된 대화 탭에서 입력 창 사라지는 문제 해결 등
+
+----
+
+
 🚀 ZEMS(Zeniji EMotion Simul): 심리 조각 시뮬레이터 안내
 
 .
