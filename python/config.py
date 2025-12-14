@@ -6,6 +6,9 @@ Zeniji Emotion Simul - Configuration
 from pathlib import Path
 import sys
 
+# 버전 정보
+VERSION = "v1.1"
+
 # 프로젝트 루트 디렉토리 찾기 (PyInstaller 호환)
 if getattr(sys, 'frozen', False):
     # PyInstaller로 빌드된 경우: exe 파일과 같은 디렉토리

@@ -1210,11 +1210,12 @@ Dep (의존): {stats.get('Dep', 0):.0f}<br>
             
             # Footer 추가
             gr.Markdown(
-                """
+                f"""
                 <div style="text-align: center; margin-top: 20px; padding: 10px; color: #666;">
                     ❤️ <a href="https://zeniji.love" target="_blank" style="color: #666; text-decoration: none;">zeniji.love</a><br>
                     💬 <a href="https://arca.live/b/zeniji" target="_blank" style="color: #666; text-decoration: none;">커뮤니티</a><br>
-                    ☕ <a href="https://buymeacoffee.com/zeniji" target="_blank" style="color: #666; text-decoration: none;">Buy Me a Coffee</a>
+                    ☕ <a href="https://buymeacoffee.com/zeniji" target="_blank" style="color: #666; text-decoration: none;">Buy Me a Coffee</a><br>
+                    <span style="font-size: 0.85em; opacity: 0.7;">Version {config.VERSION}</span>
                 </div>
                 """
             )
