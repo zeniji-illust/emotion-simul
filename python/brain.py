@@ -109,9 +109,17 @@ class Brain:
         
         # 7. 배경 업데이트 (LLM이 제공한 경우)
         background = data.get("background", "")
+        previous_background = self.state.current_background  # 변경 전 배경 저장
+        background_changed = False
+        
         if background:
-            self.state.current_background = background
-            logger.info(f"Background updated: {background}")
+            # background가 한 글자라도 바뀌면 변경으로 간주
+            if background != previous_background:
+                background_changed = True
+                self.state.current_background = background
+                logger.info(f"Background updated: {previous_background} → {background}")
+            else:
+                logger.debug(f"Background unchanged: {background}")
         else:
             # 배경이 제공되지 않았으면 이전 배경 유지
             background = self.state.current_background
@@ -123,6 +131,12 @@ class Brain:
         
         # 이미지 생성 이유 추적
         image_generation_reasons = []
+        
+        # 배경 변경 체크 (한 글자라도 바뀌면 강제로 이미지 생성)
+        if background_changed:
+            visual_change = True
+            image_generation_reasons.append(f"배경 변경: {previous_background} → {background}")
+            logger.info(f"Background changed, forcing image generation")
         
         # LLM이 직접 요청한 경우
         if data.get("visual_change_detected", False):
@@ -299,14 +313,12 @@ class Brain:
                 long_memory_instruction = f"""
 ## 6. 장기 기억 업데이트 (중요)
 
-기존 장기 기억을 바탕으로, 중요한 내용만 500자 이하로 요약하여 `long_memory_summary` 필드에 포함해주세요.
-특히 관계 발전, 중요한 이벤트, 캐릭터의 감정 변화 등을 중심으로 요약하세요. 변화가 없으면 기존 장기기억 유지합니다.
-**반드시 기존의 아주 중요한 기억은 그대로 유지하세요**
-기존 기억 + 새로운 기억을 요약하세요. 새로운 기억이 없으면 기존 기억을 그대로 유지합니다.
+기존 장기 기억을 바탕으로, 중요한 내용만 500 characters 이하로 요약하여 `long_memory_summary` 필드에 포함해주세요.
+특히 관계 발전, 중요한 이벤트, 캐릭터의 감정 변화 등을 중심으로 요약하세요. 
+기존의 아주 중요한 기억은 요약해서 유지하세요
+기존 기억 + 새로운 기억을 500 characters 이내로 요약하세요.
 
 기존 장기 기억: {existing_memory}
-
-`long_memory_summary`는 선택적 필드이지만, 중요한 변화가 있었거나 기억할 만한 내용이 있다면 반드시 포함해주세요.
 """
         
         # 현재 배경 정보
@@ -467,13 +479,13 @@ JSON
     "action_speech": "캐릭터의 자세 및 시선 처리 (3인칭 관찰자 시점, **한국어**)",
     "emotion": "happy/shy/neutral/annoyed/sad/excited/nervous",
     "visual_change_detected": true/false,
-    "visual_prompt": "English tags: expression, attire, nudity, pose, background (max 200 chars and mininum 10 words)",
+    "visual_prompt": "English tags: expression (detailed facial expression, eyes, mouth, blush), attire (clothing details, colors, accessories), nudity level (if relevant), pose (body position, hand placement, body language), background (location, lighting, atmosphere), camera angle (front, side, back, close-up, wide shot, pov). Write in detail up to 500 characters. Include specific visual details like colors, textures, lighting, and composition elements.",
     "background": "English description of current location/environment (e.g., 'college library table, evening light'). 특별한 일이 없으면 이전 배경을 그대로 유지하세요.",
     "reason": "이미지 변화 수치 혹은 상황적 이유",
     "proposed_delta": {{"P": 0, "A": 0, "D": 0, "I": 0, "T": 0, "Dep": 0}},
     "relationship_status_change": false,
     "new_status_name": "",
-    "long_memory_summary": "500자 이하로 지금까지의 중요한 기억을 요약 (변화 없으면 기존 장기기억 유지지)"
+    "long_memory_summary": "500자 이하로 지금까지의 중요한 기억을 요약 (변화 없으면 기존 장기기억 유지)"
 }}
 ```
 {long_memory_instruction}

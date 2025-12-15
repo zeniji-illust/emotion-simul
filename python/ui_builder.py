@@ -22,7 +22,7 @@ class UIBuilder:
         saved_config = app_instance.load_config()
         env_config = app_instance.load_env_config()
         
-        with gr.Blocks(title="Zeniji Emotion Simul", theme=gr.themes.Soft()) as demo:
+        with gr.Blocks(title="Zeniji Emotion Simul") as demo:
             gr.Markdown("# 🎮 Zeniji Emotion Simul")
             
             with gr.Tabs() as tabs:
@@ -194,20 +194,6 @@ class UIBuilder:
                     
                     setup_status = gr.Markdown("")
                     
-                    # 시나리오 불러오기
-                    gr.Markdown("### 📚 대화 이어가기")
-                    with gr.Row():
-                        with gr.Column(scale=2):
-                            scenario_dropdown = gr.Dropdown(
-                                label="시나리오 파일",
-                                choices=app_instance.get_scenario_files(),
-                                value=None,
-                                info="저장된 대화 시나리오 선택"
-                            )
-                        with gr.Column(scale=1):
-                            continue_chat_btn = gr.Button("📖 대화 이어가기", variant="secondary", size="lg")
-                            reload_scenario_btn = gr.Button("🔄 새로고침", variant="secondary", size="sm")
-                    
                     # Character 파일 관리
                     with gr.Row():
                         with gr.Column(scale=2):
@@ -327,11 +313,6 @@ class UIBuilder:
                         updated_files = app_instance.get_character_files()
                         return gr.Dropdown(choices=updated_files)
                     
-                    def reload_scenario_files():
-                        """시나리오 파일 목록 새로고침"""
-                        updated_files = app_instance.get_scenario_files()
-                        return gr.Dropdown(choices=updated_files)
-                    
                     def reload_workflow_files(current_value):
                         """워크플로우 파일 목록 새로고침"""
                         workflows_dir = config.PROJECT_ROOT / "workflows"
@@ -377,11 +358,6 @@ class UIBuilder:
                     reload_character_btn.click(
                         reload_character_files,
                         outputs=[character_file_dropdown]
-                    )
-                    
-                    reload_scenario_btn.click(
-                        reload_scenario_files,
-                        outputs=[scenario_dropdown]
                     )
                     
                     def normalize_chatbot_history(history):
@@ -445,12 +421,55 @@ class UIBuilder:
                             # 시나리오 불러오기
                             scenario_data = app_instance.load_scenario(selected_scenario)
                             
-                            if not scenario_data or "conversation" not in scenario_data:
+                            if not scenario_data:
                                 return f"⚠️ 시나리오 '{selected_scenario}'를 불러올 수 없습니다.", gr.Tabs(selected=None), [], "", "", None, "", "", "", None
                             
-                            history = scenario_data.get("conversation", [])
+                            # conversation 필드 확인 (전체 대화)
+                            # 기존 시나리오 호환: conversation이 없으면 context.recent_turns에서 복원
+                            if "conversation" in scenario_data:
+                                history = scenario_data["conversation"]
+                            elif "context" in scenario_data:
+                                # context.recent_turns에서 conversation 형식으로 복원
+                                context = scenario_data["context"]
+                                recent_turns = context.get("recent_turns", [])
+                                if not recent_turns:
+                                    return f"⚠️ 시나리오 '{selected_scenario}'에 대화 내용이 없습니다.", gr.Tabs(selected=None), [], "", "", None, "", "", "", None
+                                
+                                # recent_turns에서 conversation 형식으로 변환
+                                history = []
+                                for turn_data in recent_turns:
+                                    player_input = turn_data.get("player_input", "")
+                                    character_speech = turn_data.get("character_speech", "")
+                                    if player_input:
+                                        history.append({"role": "user", "content": player_input})
+                                    if character_speech:
+                                        history.append({"role": "assistant", "content": character_speech})
+                                
+                                # 호환성을 위해 scenario_data에 conversation 필드 추가
+                                scenario_data["conversation"] = history
+                            else:
+                                return f"⚠️ 시나리오 '{selected_scenario}'에 대화 내용이 없습니다. (conversation 또는 context 필드 없음)", gr.Tabs(selected=None), [], "", "", None, "", "", "", None
+                            
                             if not history:
                                 return f"⚠️ 시나리오 '{selected_scenario}'에 대화 내용이 없습니다.", gr.Tabs(selected=None), [], "", "", None, "", "", "", None
+                            
+                            # context 확인 (최근 10턴)
+                            context = scenario_data.get("context", {})
+                            recent_turns = context.get("recent_turns", [])
+                            
+                            # 시나리오와 같은 이름의 이미지 파일도 불러오기
+                            scenario_image_path = config.SCENARIOS_DIR / f"{selected_scenario}.png"
+                            if scenario_image_path.exists():
+                                try:
+                                    from PIL import Image
+                                    app_instance.current_image = Image.open(scenario_image_path)
+                                    logger.info(f"Scenario image loaded from: {scenario_image_path}")
+                                except Exception as e:
+                                    logger.warning(f"Failed to load scenario image: {e}")
+                                    app_instance.current_image = None
+                            else:
+                                app_instance.current_image = None
+                                logger.debug(f"Scenario image not found: {scenario_image_path} (optional)")
                             
                             # 모델이 로드되어 있는지 확인
                             if not app_instance.model_loaded:
@@ -525,23 +544,39 @@ class UIBuilder:
                                 else:
                                     app_instance.previous_badges = set()
                             
-                            # 문맥 정보 복원 (최근 턴)
-                            if app_instance.brain is not None and "context" in scenario_data:
-                                context = scenario_data["context"]
-                                if "recent_turns" in context and hasattr(app_instance.brain, 'history'):
+                            # 문맥 정보 복원 (recent_turns가 있으면 사용, 없으면 conversation에서 추론)
+                            if app_instance.brain is not None and hasattr(app_instance.brain, 'history'):
+                                if recent_turns:
                                     # DialogueHistory에 턴 추가
-                                    for turn_data in context["recent_turns"]:
+                                    for turn_data in recent_turns:
                                         from state_manager import DialogueTurn
+                                        character_speech = turn_data.get("character_speech", "")
                                         turn = DialogueTurn(
+                                            turn_number=turn_data.get("turn_number", 0),
                                             player_input=turn_data.get("player_input", ""),
-                                            character_response=turn_data.get("character_response", ""),
+                                            character_speech=character_speech,
+                                            character_thought=turn_data.get("character_thought", ""),
                                             emotion=turn_data.get("emotion", "neutral"),
-                                            stats_delta=turn_data.get("stats_delta", {})
+                                            visual_prompt=turn_data.get("visual_prompt", ""),
+                                            background=turn_data.get("background", "")
                                         )
                                         app_instance.brain.history.add(turn)
-                                    logger.info(f"Context restored: {len(context.get('recent_turns', []))} recent turns")
+                                    logger.info(f"Context restored: {len(recent_turns)} turns")
+                                else:
+                                    # recent_turns가 없으면 conversation에서 추론 (하위 호환성)
+                                    logger.warning("recent_turns가 없어 conversation에서 복원 시도")
+                                
+                                # 마지막 대화의 background를 current_background에 반영
+                                if "last_background" in context and context["last_background"]:
+                                    state.current_background = context["last_background"]
+                                    logger.info(f"Last background restored to current_background: {context['last_background']}")
+                                elif recent_turns and len(recent_turns) > 0:
+                                    last_turn_bg = recent_turns[-1].get("background", "")
+                                    if last_turn_bg:
+                                        state.current_background = last_turn_bg
+                                        logger.info(f"Last turn background restored to current_background: {last_turn_bg}")
                             
-                            # 히스토리를 chatbot 형식으로 변환 (정규화 함수 사용)
+                            # conversation에서 chatbot 히스토리 생성 (정규화 함수 사용)
                             chatbot_history = normalize_chatbot_history(history)
                             
                             # 현재 상태로 차트 생성
@@ -606,7 +641,109 @@ Dep (의존): {stats.get('Dep', 0):.0f}<br>
                             logger.error(traceback.format_exc())
                             return f"❌ 시나리오 불러오기 실패: {str(e)}", gr.Tabs(selected=None), [], "", "", None, "", "", "", None
                 
-                # ========== 탭 2: 대화 ==========
+                # ========== 탭 2: 시나리오 ==========
+                with gr.Tab("📚 시나리오", id="scenario_tab") as scenario_tab:
+                    gr.Markdown("## 시나리오 선택")
+                    
+                    # 플레이스홀더 이미지 생성 함수 (4:3 비율, 높이가 더 높게)
+                    def create_placeholder_image():
+                        """이미지가 없는 경우 사용할 플레이스홀더 생성 (4:3 비율)"""
+                        from PIL import Image, ImageDraw, ImageFont
+                        card_width = 200
+                        card_height = int(card_width * 4 / 3)  # 4:3 비율 (267)
+                        placeholder = Image.new('RGB', (card_width, card_height), color='#e0e0e0')
+                        draw = ImageDraw.Draw(placeholder)
+                        try:
+                            font = ImageFont.truetype("malgun.ttf", 16)
+                        except:
+                            try:
+                                font = ImageFont.truetype("gulim.ttc", 16)
+                            except:
+                                font = ImageFont.load_default()
+                        text = "이미지 없음"
+                        bbox = draw.textbbox((0, 0), text, font=font)
+                        text_width = bbox[2] - bbox[0]
+                        text_height = bbox[3] - bbox[1]
+                        position = ((card_width - text_width) // 2, (card_height - text_height) // 2)
+                        draw.text(position, text, fill='#999999', font=font)
+                        return placeholder
+                    
+                    placeholder_img = create_placeholder_image()
+                    
+                    def get_scenario_gallery_items():
+                        """시나리오 갤러리 아이템 생성 (동적 업데이트 가능)"""
+                        from PIL import Image
+                        scenarios = app_instance.get_scenario_files()
+                        gallery_items = []
+                        
+                        # 4:3 비율로 리사이즈 (높이가 더 높게)
+                        target_width = 200
+                        target_height = int(target_width * 4 / 3)  # 267
+                        
+                        for scenario_name in scenarios[:12]:  # 최대 12개
+                            image_path = config.SCENARIOS_DIR / f"{scenario_name}.png"
+                            if image_path.exists():
+                                try:
+                                    # 이미지를 4:3 비율로 리사이즈
+                                    img = Image.open(image_path)
+                                    img_resized = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                                    gallery_items.append((img_resized, scenario_name))
+                                except Exception as e:
+                                    logger.warning(f"Failed to load/resize image for {scenario_name}: {e}")
+                                    # 실패 시 플레이스홀더 사용
+                                    placeholder_resized = placeholder_img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                                    gallery_items.append((placeholder_resized, scenario_name))
+                            else:
+                                # 플레이스홀더도 4:3 비율로 리사이즈
+                                placeholder_resized = placeholder_img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                                gallery_items.append((placeholder_resized, scenario_name))
+                        return gallery_items
+                    
+                    # 시나리오 갤러리 (동적 업데이트 가능)
+                    scenario_gallery = gr.Gallery(
+                        label="시나리오",
+                        value=get_scenario_gallery_items(),
+                        show_label=False,
+                        elem_id="scenario-gallery",
+                        columns=4,
+                        rows=3,
+                        height="auto",
+                        allow_preview=False
+                    )
+                    
+                    # CSS로 이미지 크기 고정
+                    gr.HTML(value="""
+                    <style>
+                    #scenario-gallery img {
+                        max-width: 200px !important;
+                        max-height: 267px !important;
+                        width: 200px !important;
+                        height: 267px !important;
+                        object-fit: contain !important;
+                    }
+                    #scenario-gallery .gallery-item {
+                        width: 200px !important;
+                        height: 267px !important;
+                    }
+                    </style>
+                    """)
+                    
+                    # 새로고침 버튼
+                    with gr.Row():
+                        reload_scenario_cards_btn = gr.Button("🔄 새로고침", variant="secondary")
+                    
+                    def reload_scenario_gallery():
+                        """시나리오 갤러리 새로고침"""
+                        return gr.Gallery(value=get_scenario_gallery_items())
+                    
+                    reload_scenario_cards_btn.click(
+                        fn=reload_scenario_gallery,
+                        outputs=[scenario_gallery]
+                    )
+                    
+                    # 카드 클릭 이벤트는 대화 탭 컴포넌트가 정의된 후에 연결됨 (아래에서 처리)
+                
+                # ========== 탭 3: 대화 ==========
                 with gr.Tab("💬 대화", id="chat_tab") as chat_tab:
                     # 이벤트 알림 (고정 위치, 필요시 표시)
                     event_notification = gr.HTML(value="", visible=False, elem_id="event-notification-container")
@@ -710,54 +847,15 @@ Dep (의존): {stats.get('Dep', 0):.0f}<br>
                         return gr.skip()
                     
                     def save_scenario_handler(scenario_name, history):
-                        """시나리오 저장 핸들러 (대화 + 상태 정보 포함)"""
+                        """시나리오 저장 핸들러 (context.recent_turns만 저장)"""
                         if not scenario_name or not scenario_name.strip():
-                            return "⚠️ 시나리오 이름을 입력해주세요.", gr.Dropdown()
-                        
-                        if not history:
-                            return "⚠️ 저장할 대화가 없습니다.", gr.Dropdown()
+                            return "⚠️ 시나리오 이름을 입력해주세요."
                         
                         try:
-                            logger.info(f"Saving scenario: {scenario_name}, history length: {len(history) if history else 0}")
-                            
-                            # chatbot history를 process_turn 형식으로 변환
-                            converted_history = []
-                            for item in history:
-                                if isinstance(item, list) and len(item) == 2:
-                                    # Gradio chatbot 형식: [user_msg, assistant_msg]
-                                    user_msg, assistant_msg = item
-                                    if user_msg:
-                                        # content가 리스트인 경우 처리
-                                        if isinstance(user_msg, list):
-                                            # [{'text': '...', 'type': 'text'}] 형식
-                                            text_parts = [part.get('text', '') if isinstance(part, dict) else str(part) for part in user_msg]
-                                            user_msg = ''.join(text_parts)
-                                        converted_history.append({"role": "user", "content": str(user_msg)})
-                                    if assistant_msg:
-                                        # content가 리스트인 경우 처리
-                                        if isinstance(assistant_msg, list):
-                                            text_parts = [part.get('text', '') if isinstance(part, dict) else str(part) for part in assistant_msg]
-                                            assistant_msg = ''.join(text_parts)
-                                        converted_history.append({"role": "assistant", "content": str(assistant_msg)})
-                                elif isinstance(item, dict):
-                                    # 이미 dict 형식인 경우
-                                    content = item.get("content", "")
-                                    # content가 리스트인 경우 처리
-                                    if isinstance(content, list):
-                                        text_parts = [part.get('text', '') if isinstance(part, dict) else str(part) for part in content]
-                                        content = ''.join(text_parts)
-                                        item["content"] = content
-                                    converted_history.append(item)
-                            
-                            logger.info(f"Converted history length: {len(converted_history)}")
-                            
-                            if not converted_history:
-                                return "⚠️ 변환된 대화 내용이 없습니다. 대화를 먼저 시작해주세요.", gr.Dropdown()
+                            logger.info(f"Saving scenario: {scenario_name}")
                             
                             # Brain에서 상태 정보 가져오기
-                            scenario_data = {
-                                "conversation": converted_history
-                            }
+                            scenario_data = {}
                             
                             if app_instance.brain is not None:
                                 # 현재 상태 정보
@@ -789,48 +887,99 @@ Dep (의존): {stats.get('Dep', 0):.0f}<br>
                                 if hasattr(app_instance.brain, 'initial_config') and app_instance.brain.initial_config:
                                     scenario_data["initial_config"] = app_instance.brain.initial_config
                                 
-                                # 최근 대화 턴 (문맥 정보)
+                                # 최근 대화 턴 (문맥 정보) - context에 저장 (최근 10턴)
+                                conversation_list = []  # 전체 대화 conversation 형식
                                 if hasattr(app_instance.brain, 'history') and app_instance.brain.history:
                                     recent_turns = []
-                                    for turn in app_instance.brain.history.turns[-5:]:  # 최근 5턴
-                                        if hasattr(turn, 'player_input') and hasattr(turn, 'character_response'):
-                                            recent_turns.append({
-                                                "player_input": turn.player_input,
-                                                "character_response": turn.character_response,
-                                                "emotion": getattr(turn, 'emotion', 'neutral'),
-                                                "stats_delta": getattr(turn, 'stats_delta', {})
-                                            })
-                                    scenario_data["context"] = {
+                                    last_background = None
+                                    last_visual_prompt = None
+                                    history_turns = app_instance.brain.history.turns  # 모든 턴
+                                    
+                                    # 최근 10턴만 context에 저장
+                                    recent_history_turns = history_turns[-10:] if len(history_turns) > 10 else history_turns
+                                    
+                                    for idx, turn in enumerate(history_turns):
+                                        if hasattr(turn, 'player_input') and hasattr(turn, 'character_speech'):
+                                            turn_bg = getattr(turn, 'background', '')
+                                            turn_visual = getattr(turn, 'visual_prompt', '')
+                                            
+                                            # 전체 대화를 conversation 형식으로 변환
+                                            player_input = turn.player_input
+                                            character_speech = getattr(turn, 'character_speech', '')
+                                            if player_input:
+                                                conversation_list.append({"role": "user", "content": player_input})
+                                            if character_speech:
+                                                conversation_list.append({"role": "assistant", "content": character_speech})
+                                            
+                                            # 최근 10턴만 recent_turns에 저장
+                                            if turn in recent_history_turns:
+                                                # 마지막 턴의 background와 visual_prompt 저장
+                                                if idx == len(history_turns) - 1:
+                                                    last_background = turn_bg
+                                                    last_visual_prompt = turn_visual
+                                                
+                                                recent_turns.append({
+                                                    "turn_number": getattr(turn, 'turn_number', 0),
+                                                    "player_input": turn.player_input,
+                                                    "character_speech": getattr(turn, 'character_speech', ''),
+                                                    "character_thought": getattr(turn, 'character_thought', ''),
+                                                    "emotion": getattr(turn, 'emotion', 'neutral'),
+                                                    "visual_prompt": turn_visual,
+                                                    "background": turn_bg,
+                                                    "stats_delta": getattr(turn, 'stats_delta', {})
+                                                })
+                                    
+                                    # context에 recent_turns 저장 (최근 10턴)
+                                    context_data = {
                                         "recent_turns": recent_turns
                                     }
-                            
-                            if app_instance.save_scenario(scenario_data, scenario_name.strip()):
-                                # 드롭다운 목록 새로고침
-                                updated_files = app_instance.get_scenario_files()
-                                return f"✅ {scenario_name.strip()}.json 저장 완료!", gr.Dropdown(choices=updated_files, value=scenario_name.strip())
+                                    if last_background:
+                                        context_data["last_background"] = last_background
+                                    elif state.current_background:
+                                        context_data["last_background"] = state.current_background
+                                    if last_visual_prompt:
+                                        context_data["last_visual_prompt"] = last_visual_prompt
+                                    
+                                    scenario_data["context"] = context_data
+                                    
+                                    if not recent_turns:
+                                        return "⚠️ 저장할 대화 내용이 없습니다. 대화를 먼저 시작해주세요."
+                                
+                                # conversation 저장 (전체 대화, 최하단)
+                                scenario_data["conversation"] = conversation_list
                             else:
-                                return "❌ 시나리오 저장 실패", gr.Dropdown()
+                                return "⚠️ 게임이 시작되지 않았습니다."
+                            
+                            # 시나리오 저장
+                            scenario_name_clean = scenario_name.strip()
+                            # .json 확장자 제거 (save_scenario에서 자동 추가)
+                            if scenario_name_clean.endswith('.json'):
+                                scenario_name_clean = scenario_name_clean[:-5]
+                            
+                            if app_instance.save_scenario(scenario_data, scenario_name_clean):
+                                # 마지막 이미지도 함께 저장 (같은 이름으로 PNG 파일)
+                                if app_instance.current_image is not None:
+                                    try:
+                                        from PIL import Image
+                                        scenario_image_path = config.SCENARIOS_DIR / f"{scenario_name_clean}.png"
+                                        app_instance.current_image.save(scenario_image_path, "PNG")
+                                        logger.info(f"Scenario image saved to: {scenario_image_path}")
+                                    except Exception as e:
+                                        logger.warning(f"Failed to save scenario image: {e}")
+                                
+                                return f"✅ {scenario_name_clean}.json 저장 완료! (시나리오 탭에서 확인하세요.)"
+                            else:
+                                return "❌ 시나리오 저장 실패"
                         except Exception as e:
                             logger.error(f"Failed to save scenario: {e}")
                             import traceback
                             logger.error(traceback.format_exc())
-                            return f"❌ 시나리오 저장 실패: {str(e)}", gr.Dropdown()
+                            return f"❌ 시나리오 저장 실패: {str(e)}"
                     
                     save_scenario_btn.click(
                         save_scenario_handler,
                         inputs=[scenario_save_name, chatbot],
-                        outputs=[scenario_save_status, scenario_dropdown]
-                    )
-                    
-                    # 시나리오 불러오기 버튼 (대화 탭 컴포넌트가 정의된 후에 연결)
-                    continue_chat_btn.click(
-                        continue_chat,
-                        inputs=[scenario_dropdown],
-                        outputs=[
-                            setup_status, tabs,
-                            chatbot, gr.Textbox(visible=False), stats_display, image_display,
-                            gr.Textbox(visible=False), thought_display, action_display, stats_chart
-                        ]
+                        outputs=[scenario_save_status]
                     )
                     
                     def update_chart_if_needed(new_chart):
@@ -898,6 +1047,29 @@ Dep (의존): {stats.get('Dep', 0):.0f}<br>
                         retry_image_handler,
                         inputs=[],
                         outputs=[image_display, retry_image_status, retry_image_btn]
+                    )
+                    
+                    # 시나리오 갤러리 선택 이벤트 연결 (대화 탭 컴포넌트 정의 이후)
+                    def on_scenario_gallery_select(evt: gr.SelectData):
+                        """갤러리에서 시나리오 선택 시"""
+                        if evt.index is None:
+                            return gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip()
+                        
+                        scenarios = app_instance.get_scenario_files()
+                        if evt.index >= len(scenarios):
+                            return gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip(), gr.skip()
+                        
+                        selected_scenario = scenarios[evt.index]
+                        # continue_chat 함수 호출
+                        return continue_chat(selected_scenario)
+                    
+                    scenario_gallery.select(
+                        fn=on_scenario_gallery_select,
+                        outputs=[
+                            setup_status, tabs,
+                            chatbot, gr.Textbox(visible=False), stats_display, image_display,
+                            gr.Textbox(visible=False), thought_display, action_display, stats_chart
+                        ]
                     )
                     
                     # 모델 로드 완료 시 UI 활성화
