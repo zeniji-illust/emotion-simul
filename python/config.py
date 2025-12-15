@@ -29,6 +29,7 @@ ENV_CONFIG_FILE = ENV_CONFIG_DIR / "settings.json"
 API_KEY_DIR = PROJECT_ROOT / "apikey"
 OPENROUTER_API_KEY_FILE = API_KEY_DIR / "openrouter_api_key.txt"
 SCENARIOS_DIR = PROJECT_ROOT / "scenarios"
+IMAGE_DIR = PROJECT_ROOT / "images"  # 생성된 이미지 저장 폴더
 
 # 프리셋 정의
 PRESETS = {
@@ -123,7 +124,7 @@ OPENROUTER_MODEL = "cognitivecomputations/dolphin-mistral-24b-venice-edition:fre
 LLM_CONFIG = {
     "temperature": 0.7,
     "top_p": 0.9,
-    "max_tokens": 600
+    "max_tokens": 1600
 }
 
 # ComfyUI 설정

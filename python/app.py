@@ -11,6 +11,7 @@ import sys
 import socket
 from pathlib import Path
 from typing import Tuple, Optional, Dict, Any
+from datetime import datetime
 
 # PyInstaller 호환성을 위한 경로 설정
 if getattr(sys, 'frozen', False):
@@ -99,6 +100,36 @@ class GameApp:
     def save_scenario(self, scenario_data: dict, scenario_name: str) -> bool:
         """시나리오 데이터를 파일로 저장 (JSON 형식) - 대화 + 상태 정보 포함"""
         return self.config_manager.save_scenario(scenario_data, scenario_name)
+    
+    def _save_generated_image(self, image: Image.Image, turn_number: Optional[int] = None) -> Optional[str]:
+        """
+        생성된 이미지를 파일로 저장
+        Args:
+            image: PIL Image 객체
+            turn_number: 턴 번호 (None이면 재생성 이미지)
+        Returns:
+            저장된 파일 경로 (실패 시 None)
+        """
+        try:
+            # 이미지 폴더가 없으면 생성
+            config.IMAGE_DIR.mkdir(exist_ok=True)
+            
+            # 파일명 생성 (타임스탬프 + 턴 번호)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            if turn_number is not None:
+                filename = f"image_turn{turn_number:04d}_{timestamp}.png"
+            else:
+                filename = f"image_retry_{timestamp}.png"
+            
+            file_path = config.IMAGE_DIR / filename
+            
+            # 이미지 저장
+            image.save(file_path, "PNG")
+            logger.info(f"Generated image saved to: {file_path}")
+            return str(file_path)
+        except Exception as e:
+            logger.error(f"Failed to save generated image: {e}")
+            return None
     
     def load_scenario(self, scenario_name: str) -> dict:
         """시나리오 파일을 불러오기 (JSON 형식) - 대화 + 상태 정보 포함"""
@@ -502,6 +533,9 @@ Dep (의존): {stats.get('Dep', 0):.0f} {format_delta('Dep')}<br>
                 logger.info(f"  appearance: {appearance[:50]}...")
                 logger.info(f"  visual_prompt: {visual_prompt[:100]}...")
                 
+                # 현재 턴 번호 가져오기
+                turn_number = self.brain.state.total_turns if self.brain and self.brain.state else None
+                
                 image_bytes = self.comfy_client.generate_image(
                     visual_prompt=visual_prompt,
                     appearance=appearance,
@@ -513,6 +547,8 @@ Dep (의존): {stats.get('Dep', 0):.0f} {format_delta('Dep')}<br>
                     image = Image.open(io.BytesIO(image_bytes))
                     # 현재 이미지로 저장
                     self.current_image = image
+                    # 이미지 파일로 저장
+                    self._save_generated_image(image, turn_number)
                     # 마지막 이미지 생성 정보 저장 (재시도용)
                     self.last_image_generation_info = {
                         "visual_prompt": visual_prompt,
@@ -569,6 +605,8 @@ Dep (의존): {stats.get('Dep', 0):.0f} {format_delta('Dep')}<br>
                 image = Image.open(io.BytesIO(image_bytes))
                 # 현재 이미지로 업데이트
                 self.current_image = image
+                # 이미지 파일로 저장 (재생성 이미지는 turn_number 없이 저장)
+                self._save_generated_image(image, None)
                 logger.info("✅ 이미지 재생성 완료")
                 return image, "✅ 이미지가 재생성되었습니다."
             else:
@@ -693,7 +731,7 @@ def main():
         print("🛠  Dev Mode ON")
     print("=" * 60 + "\n")
     
-    demo.launch(server_name="127.0.0.1", server_port=server_port, share=False, inbrowser=True, show_error=False)
+    demo.launch(server_name="127.0.0.1", server_port=server_port, share=False, inbrowser=True, show_error=False, theme=gr.themes.Soft())
 
 
 if __name__ == "__main__":

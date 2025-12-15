@@ -118,6 +118,20 @@ class GameInitializer:
                     model_name=model_name,
                     api_key=api_key
                 )
+            else:
+                # Brain이 이미 존재하면 새 게임을 위해 상태 초기화
+                logger.info("Resetting Brain state and history for new game")
+                from state_manager import CharacterState, DialogueHistory
+                app_instance.brain.state = CharacterState()
+                app_instance.brain.history = DialogueHistory(max_turns=10)
+                app_instance.brain.turns_since_image = 0
+            
+            # 기타 앱 인스턴스 상태 초기화
+            app_instance.current_image = None
+            app_instance.current_chart = None
+            app_instance.previous_relationship = None
+            app_instance.previous_badges = set()
+            app_instance.last_image_generation_info = None
             
             # 초기 설정 정보 전달
             app_instance.brain.set_initial_config(config_data)
@@ -205,6 +219,8 @@ class GameInitializer:
                         initial_image = Image.open(io.BytesIO(image_bytes))
                         # 현재 이미지로 저장
                         app_instance.current_image = initial_image
+                        # 이미지 파일로 저장 (초기 이미지는 turn_number 없이 저장)
+                        app_instance._save_generated_image(initial_image, None)
                         # 마지막 이미지 생성 정보 저장 (재시도용)
                         app_instance.last_image_generation_info = {
                             "visual_prompt": visual_prompt,
