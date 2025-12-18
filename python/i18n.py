@@ -1233,8 +1233,8 @@ TRANSLATIONS = {
                 "kr": "지난 10턴의 대화를 바탕으로 하여 덧붙일 내용은 300자 이내로 요약하세요. 이를 앞서 요약한 700자 내의 기존 기억 뒤에 붙이세요.",
             },
             "long_memory_update_focus": {
-                "en": "Prioritize relationship milestones, key events, and the character's emotional evolution during the summary process.",
-                "kr": "특히 관계 발전, 중요한 이벤트, 캐릭터의 감정 변화 등을 중심으로 요약하세요.",
+                "en": "Especially focus on detailed character settings(e.g, major, occupation, hobbies, etc), relationship development, important events, and character's emotional changes when summarizing.",
+                "kr": "특히 캐릭터의 세세한 설정(예: 전공, 직업, 취미 등), 관계 발전, 중요한 이벤트, 캐릭터의 감정 변화 등을 중심으로 요약하세요.",
             }
         },
         "defaults": {
