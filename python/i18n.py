@@ -1221,21 +1221,21 @@ TRANSLATIONS = {
                 "kr": "## 6. 장기 기억 업데이트 (중요)",
             },
             "long_memory_update_instruction": {
-                "en": "Based on existing long-term memory, summarize only important content in 1000 characters or less and include it in the `long_memory_summary` field.",
-                "kr": "기존 장기 기억을 바탕으로, 중요한 내용만 1000 characters 이하로 요약하여 `long_memory_summary` 필드에 포함해주세요.",
+                "en": "Update the `long_memory_summary` field by synthesizing existing memories and new interactions. Keep the total content concise yet comprehensive.",
+                "kr": "기존 장기 기억과 새로운 상호작용을 통합하여 `long_memory_summary` 필드를 업데이트하세요. 전체 내용을 간결하면서도 포괄적으로 유지하세요.",
             },
             "long_memory_update_keep": {
-                "en": "Keep very important existing memories summarized.",
-                "kr": "기존의 아주 중요한 기억은 요약해서 유지하세요",
+                "en": "Retain and summarize the most critical existing memories within 700 characters.",
+                "kr": "기존의 아주 중요한 기억은 700자 이내로 요약하여 유지하세요.",
             },
             "long_memory_update_combine": {
-                "en": "Summarize existing memory + new memory within 1000 characters.",
-                "kr": "기존 기억 + 새로운 기억을 1000 characters 이내로 요약하세요.",
+                "en": "Summarize the last 10 turns of the current conversation within 300 characters and append it to the end of the existing 700-character summary.",
+                "kr": "지난 10턴의 대화를 바탕으로 하여 덧붙일 내용은 300자 이내로 요약하세요. 이를 앞서 요약한 700자 내의 기존 기억 뒤에 붙이세요.",
             },
             "long_memory_update_focus": {
-                "en": "Especially focus on relationship development, important events, character's emotional changes, etc. when summarizing.",
+                "en": "Prioritize relationship milestones, key events, and the character's emotional evolution during the summary process.",
                 "kr": "특히 관계 발전, 중요한 이벤트, 캐릭터의 감정 변화 등을 중심으로 요약하세요.",
-            },
+            }
         },
         "defaults": {
             "character_gender": {
