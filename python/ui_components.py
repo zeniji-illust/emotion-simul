@@ -6,6 +6,7 @@ UI 컴포넌트 생성 (차트, 모달 등)
 import logging
 from typing import Dict, Optional
 import plotly.graph_objects as go
+from i18n import get_i18n
 
 logger = logging.getLogger("UIComponents")
 
@@ -74,6 +75,8 @@ class UIComponents:
     @staticmethod
     def create_single_notification(event_type: str, event_data: dict, top_offset: int = 20) -> str:
         """단일 이벤트 알림 HTML 생성"""
+        i18n = get_i18n()
+        
         emoji_map = {
             "jackpot": "🎰",
             "surprise": "✨",
@@ -89,30 +92,30 @@ class UIComponents:
         }
         
         title_map = {
-            "jackpot": "극진한 반응!",
-            "surprise": "놀라운 반응!",
-            "badge": "뱃지 획득!",
-            "Lover": "관계 발전!",
-            "Partner": "결혼!",
-            "Divorce": "이혼",
-            "Tempted": "유혹",
-            "slave": "노예",
-            "master": "주인",
-            "fiancee": "약혼",
-            "breakup": "이별"
+            "jackpot": i18n.get_text("event_title_jackpot"),
+            "surprise": i18n.get_text("event_title_surprise"),
+            "badge": i18n.get_text("event_title_badge"),
+            "Lover": i18n.get_text("event_title_lover"),
+            "Partner": i18n.get_text("event_title_partner"),
+            "Divorce": i18n.get_text("event_title_divorce"),
+            "Tempted": i18n.get_text("event_title_tempted"),
+            "slave": i18n.get_text("event_title_slave"),
+            "master": i18n.get_text("event_title_master"),
+            "fiancee": i18n.get_text("event_title_fiancee"),
+            "breakup": i18n.get_text("event_title_breakup")
         }
         
         emoji = emoji_map.get(event_type, "🎉")
-        title = title_map.get(event_type, "이벤트 발생!")
+        title = title_map.get(event_type, i18n.get_text("event_title_default"))
         
         if event_type == "badge":
-            message = f"<strong>{event_data.get('badge_name', '')}</strong> 뱃지를 획득했습니다!"
+            message = i18n.get_text("event_msg_badge_acquired", badge_name=event_data.get('badge_name', ''))
         elif isinstance(event_type, str) and event_type.lower() in ["lover", "partner", "fiancee", "tempted", "slave", "master"]:
-            message = f"관계가 <strong>{event_data.get('new_status', event_type)}</strong>로 발전했습니다!"
+            message = i18n.get_text("event_msg_relationship_progress", new_status=event_data.get('new_status', event_type))
         elif isinstance(event_type, str) and event_type.lower() in ["divorce", "breakup"]:
-            message = f"관계가 <strong>{event_data.get('new_status', event_type)}</strong>로 변경되었습니다."
+            message = i18n.get_text("event_msg_relationship_change", new_status=event_data.get('new_status', event_type))
         else:
-            message = event_data.get('message', '특별한 이벤트가 발생했습니다!')
+            message = event_data.get('message', i18n.get_text("event_msg_special_event"))
         
         # 뱃지는 더 강조된 색상 사용
         if event_type == "badge":

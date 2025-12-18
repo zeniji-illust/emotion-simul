@@ -882,6 +882,70 @@ TRANSLATIONS = {
                 "en": "Discourage repeating same words (0.0 ~ 2.0), (0.5~1.0 recommended)",
                 "kr": "같은 단어 반복을 줄입니다 (0.0 ~ 2.0), (0.5~1.0 recommended)",
             },
+            "event_title_jackpot": {
+                "en": "Extreme Reaction!",
+                "kr": "극진한 반응!",
+            },
+            "event_title_surprise": {
+                "en": "Surprising Reaction!",
+                "kr": "놀라운 반응!",
+            },
+            "event_title_badge": {
+                "en": "Badge Acquired!",
+                "kr": "뱃지 획득!",
+            },
+            "event_title_lover": {
+                "en": "Relationship Progress!",
+                "kr": "관계 발전!",
+            },
+            "event_title_partner": {
+                "en": "Marriage!",
+                "kr": "결혼!",
+            },
+            "event_title_divorce": {
+                "en": "Divorce",
+                "kr": "이혼",
+            },
+            "event_title_tempted": {
+                "en": "Temptation",
+                "kr": "유혹",
+            },
+            "event_title_slave": {
+                "en": "Slave",
+                "kr": "노예",
+            },
+            "event_title_master": {
+                "en": "Master",
+                "kr": "주인",
+            },
+            "event_title_fiancee": {
+                "en": "Engagement",
+                "kr": "약혼",
+            },
+            "event_title_breakup": {
+                "en": "Breakup",
+                "kr": "이별",
+            },
+            "event_title_default": {
+                "en": "Event Occurred!",
+                "kr": "이벤트 발생!",
+            },
+            "event_msg_badge_acquired": {
+                "en": "<strong>{badge_name}</strong> badge acquired!",
+                "kr": "<strong>{badge_name}</strong> 뱃지를 획득했습니다!",
+            },
+            "event_msg_relationship_progress": {
+                "en": "Relationship has progressed to <strong>{new_status}</strong>!",
+                "kr": "관계가 <strong>{new_status}</strong>로 발전했습니다!",
+            },
+            "event_msg_relationship_change": {
+                "en": "Relationship has changed to <strong>{new_status}</strong>.",
+                "kr": "관계가 <strong>{new_status}</strong>로 변경되었습니다.",
+            },
+            "event_msg_special_event": {
+                "en": "A special event has occurred!",
+                "kr": "특별한 이벤트가 발생했습니다!",
+            },
         },
         "prompts": {
             "system_intro": {
