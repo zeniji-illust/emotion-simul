@@ -1,18 +1,17 @@
+v.1.3 업데이트(251219): 영어 지원, sdxl 지원, LoRA 지원(1개 가능), 이 순간 기억하기 저장 추가, system prompt 수정 및 보강, LLM 상세 세팅 추가(temperature 등)
+v.1.3 (251219): Added English support, SDXL support, single LoRA support, "Save This Moment" feature, improved system prompts, and advanced LLM settings (temperature, etc.).
 
-v.1.2 업데이트: 시나리오 탭 추가, 이미지 저장 추가, 시나리오 로딩 시 컨텍스트 및 장기기억 복원 기능 추가, 장기 메모리 요약 길이 확대
+v.1.2 업데이트(251214): 시나리오 탭 추가, 이미지 저장 추가, 시나리오 로딩 시 컨텍스트 및 장기기억 복원 기능 추가, 장기 메모리 요약 길이 확대
+v.1.2 (251214): Added Scenario tab, image saving, context/long-term memory restoration for scenario loading, and increased long-term memory summary length.
 
 v.1.1 업데이트: 환경 설정 창에서 vae,  text encoders 선택 가능 / 시작 후 이동된 대화 탭에서 입력 창 사라지는 문제 해결 등
+v.1.1: Added VAE and Text Encoder selection in settings; fixed the issue where the input box disappeared in the chat tab after navigation.
+
 
 ----
 
 
 🚀 ZEMS(Zeniji EMotion Simul): 심리 조각 시뮬레이터 안내
-
-.
-
-** 현재는 한국어(Korean)만 지원합니다.**
-
-Currently, only Korean is supported.
 
 .
 
@@ -97,7 +96,7 @@ With OpenRouter API, ZEMS runs smoothly on most PCs. We highly recommend using p
 ☕ 후원: buymeacoffee.com/zeniji
 
 
-"그녀의 마음을 조각하세요. 단, 모든 상처는 영원히 남습니다." 
+"그/녀의 마음을 조각하세요. 단, 모든 상처는 영원히 남습니다." 
 
-"Sculpt her mind. But every scar lasts forever."
+"Sculpt his/her mind. But every scar lasts forever."
 
