@@ -813,9 +813,12 @@ Based on the above, please summarize only important memories in 500 characters o
 
     def _fallback_response(self, player_input: str) -> Dict:
         """파싱 실패 시 기본 응답"""
+        i18n = get_i18n()
+        i18n.set_language(self.language)
+        
         return {
-            "thought": "어... 뭐라고 해야 하지?",
-            "speech": "아, 잠깐만... 무슨 말인지 다시 한번 말해줄래?",
+            "thought": i18n.get_prompt("fallback_thought"),
+            "speech": i18n.get_prompt("fallback_speech"),
             "emotion": "nervous",
             "visual_change_detected": False,
             "visual_prompt": "",
